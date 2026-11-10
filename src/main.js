@@ -6,22 +6,58 @@ import { input, readInput } from './input.js';
 import { createShip } from './ship.js';
 import { createWorld, createFoam } from './world.js';
 import { createEffects } from './effects.js';
+import { createEnemies } from './enemies.js';
+import { createLoot } from './loot.js';
 import { unlockAudio, audioSetting, toggleAudio, sfx, seaSpeed } from './audio.js';
+
+const PLAYER_SHOT = 5; // damage per cannonball: a pirate (30) takes about 3 good broadsides
+const PIRATE_SHOT = 6; // we (100) can take about 8
 
 const stage = createStage(document.getElementById('game'));
 const world = createWorld(stage.scene);
 const foam = createFoam(stage.scene);
-const ship = createShip(stage.scene);
 const fx = createEffects(stage.scene, world.solidAt);
-const fireButtons = { left: document.getElementById('fireL'), right: document.getElementById('fireR') };
+const loot = createLoot(stage.scene);
+const ship = createShip(stage.scene, undefined, undefined, true);
+const p = ship.state;
+const enemies = createEnemies(stage.scene, world, fx, loot, (shots, dist) => {
+  shots.forEach((c) => fx.shoot(c.x, c.z, c.dx, c.dz, hitPlayer));
+  sfx.cannon(shots.length, Math.max(0.3, 0.9 - dist / 25));
+});
+
+const $ = (id) => document.getElementById(id);
+const fireButtons = { left: $('fireL'), right: $('fireR') };
 const wasReady = { left: true, right: true };
+let gold = 0;
 
 input.onFire = (side) => {
   const shots = ship.fire(side);
   if (!shots) return;
-  shots.forEach((c) => fx.shoot(c.x, c.z, c.dx, c.dz));
+  shots.forEach((c) => fx.shoot(c.x, c.z, c.dx, c.dz, (x, y, z) => enemies.hitAt(x, y, z, PLAYER_SHOT)));
   sfx.cannon(shots.length);
 };
+
+// A pirate cannonball at (x, y, z): does it hit us?
+function hitPlayer(x, y, z) {
+  if (!ship.touches(x, y, z)) return false;
+  fx.shipHit(x, y, z);
+  sfx.hurt();
+  shake = 0.35;
+  $('hull').classList.remove('hit');
+  void $('hull').offsetWidth; // restart the shake animation
+  $('hull').classList.add('hit');
+  if (ship.hurt(PIRATE_SHOT)) {
+    sfx.sink();
+    banner('Your ship sank!', 'Back to the start…');
+  }
+  return true;
+}
+
+function banner(text, small = '') {
+  $('banner').innerHTML = `${text}<small>${small}</small>`;
+  $('banner').classList.add('on');
+  setTimeout(() => $('banner').classList.remove('on'), 2600);
+}
 
 // Sound starts on the first tap; music and sound buttons in the top-right corner.
 unlockAudio();
@@ -39,7 +75,7 @@ for (const name of ['music', 'sound']) {
     btn.classList.toggle('off', !toggleAudio(name));
     sfx.click();
   };
-  document.getElementById('audio').append(btn);
+  $('audio').append(btn);
 }
 
 const focus = new THREE.Vector3(); // what the camera looks at
@@ -47,19 +83,39 @@ let time = 0, shake = 0;
 
 function frame(dt) {
   time += dt;
-  const s = ship.state;
   readInput();
-  ship.update(dt, time, input);
-  world.update(s.x, s.z, time);
-  const hit = world.collide(s);
+  const mag = Math.hypot(input.x, input.y);
+  // Thumbstick on the screen -> heading in the world (the camera looks along (1,1,1)).
+  const want = mag > 0.12 ? Math.atan2(-input.x - input.y, input.x - input.y) : null;
+  ship.update(dt, time, want, Math.min(1, mag * 1.3));
+  world.update(p.x, p.z, time);
+  const hit = world.collide(p);
   if (hit > 1) { // bump: splash, knock and a little camera shake
-    fx.splash(s.hitX, s.hitZ, 0.8);
+    fx.splash(p.hitX, p.hitZ, 0.8);
     sfx.bump();
     shake = Math.min(0.4, hit * 0.06);
   }
-  foam(s.x, s.z, time);
+  enemies.update(dt, time, p, stage.camera);
+  const got = loot.update(dt, time, p);
+  if (got) {
+    gold += got;
+    $('gold').lastChild.textContent = gold;
+    $('gold').classList.remove('pop');
+    void $('gold').offsetWidth;
+    $('gold').classList.add('pop');
+  }
+  if (p.sinking >= 0 && Math.random() < dt * 8) fx.bubble(p.x, p.z);
+  if (p.sinking > 3) { // back to the start, fully repaired
+    enemies.clear();
+    ship.reset(0, 0);
+    focus.set(0, 0, 0);
+  }
+  foam(p.x, p.z, time);
   fx.update(dt);
-  seaSpeed(Math.min(1, s.speed / 7));
+  seaSpeed(Math.min(1, p.speed / 7));
+
+  $('hull').firstChild.style.width = (100 * p.hp) / p.maxHp + '%';
+  $('hull').classList.toggle('low', p.hp <= 30);
   for (const side of ['left', 'right']) {
     const ready = ship.ready(side);
     fireButtons[side].style.setProperty('--ready', ready.toFixed(2));
@@ -69,8 +125,8 @@ function frame(dt) {
 
   // Camera: ship in the middle, leaning a little the way it is going.
   const k = 1 - Math.exp(-dt * 3);
-  focus.x += (s.x + s.vx * 0.35 - focus.x) * k;
-  focus.z += (s.z + s.vz * 0.35 - focus.z) * k;
+  focus.x += (p.x + p.vx * 0.35 - focus.x) * k;
+  focus.z += (p.z + p.vz * 0.35 - focus.z) * k;
   shake *= Math.exp(-dt * 8);
   stage.look(focus.clone().add(new THREE.Vector3((Math.random() - 0.5) * shake, 0, (Math.random() - 0.5) * shake)));
   stage.render();
@@ -83,4 +139,4 @@ stage.renderer.setAnimationLoop((now) => {
 });
 
 // Lets the browser console inspect the game while developing.
-if (import.meta.env.DEV) window.game = { stage, ship, world, frame };
+if (import.meta.env.DEV) window.game = { stage, ship, world, enemies, frame };

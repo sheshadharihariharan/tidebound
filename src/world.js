@@ -143,7 +143,12 @@ export function createWorld(scene) {
     }
     return null;
   }
-  return { update, collide, solidAt, cells };
+  // Is there open water within `margin` of (x, z)?
+  function clearAt(x, z, margin) {
+    for (const c of cells.values()) for (const h of c.hits) if (Math.hypot(x - h.x, z - h.z) < h.r + margin) return false;
+    return true;
+  }
+  return { update, collide, solidAt, clearAt, cells };
 }
 
 // Light dashes that breathe in and out across the water, wrapping around the camera.

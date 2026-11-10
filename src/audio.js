@@ -163,14 +163,44 @@ export const sfx = {
   click: () => play((t) => tone(720, t, 0.05, { type: 'triangle', gain: 0.18 })),
 
   // Combat: a deep boom per cannon, a little apart, with a puff of smoke.
-  cannon: (count = 2) => play((t) => {
+  // `loud` is 0..1, quieter for pirates firing further away.
+  cannon: (count = 2, loud = 1) => play((t) => {
     for (let i = 0; i < count; i++) {
       const at = t + i * 0.07;
-      tone(120, at, 0.4, { gain: 0.55, slideTo: 38 });
-      noise(at, 0.45, { freq: 2200, freqTo: 180, gain: 0.32 });
-      noise(at, 0.03, { type: 'highpass', freq: 3500, gain: 0.25 });
+      tone(120, at, 0.4, { gain: 0.55 * loud, slideTo: 38 });
+      noise(at, 0.45, { freq: 2200, freqTo: 180, gain: 0.32 * loud });
+      noise(at, 0.03, { type: 'highpass', freq: 3500, gain: 0.25 * loud });
     }
   }),
+  // Our shot cracking into a pirate's hull: sharp wood snap.
+  crack: () => play((t) => {
+    noise(t, 0.08, { type: 'bandpass', freq: 1600, q: 2, gain: 0.5 });
+    tone(260, t, 0.15, { type: 'triangle', gain: 0.3, slideTo: 110 });
+    for (let i = 0; i < 3; i++) noise(t + 0.05 + i * 0.04, 0.04, { type: 'highpass', freq: 2500 + i * 700, gain: 0.15 });
+  }),
+  // A pirate shot hitting us: heavier, lower crunch.
+  hurt: () => play((t) => {
+    tone(90, t, 0.35, { gain: 0.5, slideTo: 40 });
+    noise(t, 0.2, { type: 'bandpass', freq: 900, q: 1.5, gain: 0.45 });
+    tone(180, t + 0.04, 0.3, { type: 'sawtooth', gain: 0.04, slideTo: 140 });
+  }),
+  // A ship going under: falling groan and gurgles.
+  sink: () => play((t) => {
+    tone(200, t, 1.4, { type: 'triangle', gain: 0.18, slideTo: 60 });
+    noise(t, 1.6, { freq: 900, freqTo: 120, gain: 0.2 });
+    for (let i = 0; i < 7; i++) tone(300 + Math.random() * 300, t + 0.3 + i * 0.17, 0.08, { gain: 0.06, slideTo: 700 });
+  }),
+  // Picking up a coin: bright two-note jingle, a little higher each time in a quick run.
+  coin: (() => {
+    let run = 0, last = 0;
+    return () => play((t) => {
+      run = t - last < 0.6 ? Math.min(run + 1, 6) : 0;
+      last = t;
+      const base = 81 + [0, 2, 4, 5, 7, 9, 12][run];
+      tone(hz(base), t, 0.12, { type: 'triangle', gain: 0.12 });
+      tone(hz(base + 7), t + 0.06, 0.25, { type: 'triangle', gain: 0.1 });
+    });
+  })(),
   // Shot dropping into the sea.
   splash: () => play((t) => {
     noise(t, 0.5, { freq: 2400, freqTo: 300, gain: 0.12 });

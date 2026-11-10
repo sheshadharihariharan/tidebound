@@ -38,6 +38,31 @@ html, body {
 #fireR { right: calc(22px + env(safe-area-inset-right)); }
 @media (pointer: fine) { .fire::after { content: attr(data-key); position: absolute; top: -12px; right: -4px; background: var(--ink); border-radius: 8px; padding: 3px 8px; font-size: 15px; } }
 
+/* Top-left: hull health and gold. */
+#hud { position: fixed; top: calc(12px + env(safe-area-inset-top)); left: calc(14px + env(safe-area-inset-left)); display: flex; align-items: center; gap: 14px; pointer-events: none; }
+#hull { width: 170px; height: 22px; border-radius: 11px; border: 4px solid var(--ink); background: #2c4a52; overflow: hidden; box-shadow: 0 3px 0 rgba(0, 0, 0, .25); }
+#hull i { display: block; height: 100%; width: 100%; background: #5bd16a; border-radius: 6px; transition: width .2s; }
+#hull.low i { background: #ff7a4a; }
+#hull.hit { animation: shake .25s; }
+@keyframes shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+#gold { display: flex; align-items: center; gap: 6px; color: #fff; font-size: 26px; text-shadow: 0 2px 0 var(--ink); }
+.coin { width: 24px; height: 24px; border-radius: 50%; background: var(--gold); border: 3px solid var(--ink); }
+#gold.pop b { animation: pop .25s; display: inline-block; }
+@keyframes pop { 50% { transform: scale(1.35); } }
+
+/* Pirate health bars, placed over each pirate from code. */
+#bars { position: fixed; inset: 0; pointer-events: none; }
+.ebar { position: absolute; left: 0; top: 0; width: 50px; height: 10px; border-radius: 5px; border: 3px solid var(--ink); background: #2c4a52; overflow: hidden; }
+.ebar i { display: block; height: 100%; background: #ff5a4a; }
+
+/* Big message in the middle ("Your ship sank!"). */
+#banner {
+  position: fixed; left: 50%; top: 38%; transform: translate(-50%, -50%) scale(.8); opacity: 0; transition: opacity .3s, transform .3s;
+  color: #fff; font-size: 40px; text-align: center; text-shadow: 0 3px 0 var(--ink); pointer-events: none; white-space: nowrap;
+}
+#banner small { display: block; font-size: 20px; }
+#banner.on { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+
 /* Music and sound on/off, top-right. */
 #audio { position: fixed; top: calc(12px + env(safe-area-inset-top)); right: calc(14px + env(safe-area-inset-right)); display: flex; gap: 10px; }
 .round {
