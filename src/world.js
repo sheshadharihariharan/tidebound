@@ -10,7 +10,7 @@ const SAND = new THREE.CylinderGeometry(0.9, 1, 0.6, 14);
 const GRASS = new THREE.CylinderGeometry(0.62, 0.72, 0.4, 12);
 const TRUNK = new THREE.CylinderGeometry(0.1, 0.17, 2.2, 6);
 const LEAF = new THREE.SphereGeometry(1, 6, 4);
-const rockMats = [0x8a8f99, 0x7b8089, 0x9a948b].map((c) => toon(c, { flatShading: true }));
+const rockMats = [0x8a8f99, 0x7b8089, 0x9a948b].map((c) => toon(c));
 const sandMat = toon(0xf2d49b), grassMat = toon(0x4fae55), trunkMat = toon(0x7a5230), leafMat = toon(0x2f9a4a);
 const foamMat = flat(0.55);
 
@@ -64,7 +64,7 @@ function buildCell(i, j) {
         ring.position.set(x, 0.03, z);
         group.add(rock, ring);
         rings.push({ ring, r: r * 1.05, phase: rnd() * 6 });
-        hits.push({ x, z, r: r * 0.95 });
+        hits.push({ x, z, r: r * 0.95, top: r * 1.05, kind: 'rock' });
       }
     } else {
       const R = 3 + rnd() * 1.5, x = cx + (rnd() - 0.5) * 4, z = cz + (rnd() - 0.5) * 4;
@@ -82,7 +82,7 @@ function buildCell(i, j) {
         const a = rnd() * 6.28, d = rnd() * R * 0.4;
         group.add(palm(x + Math.cos(a) * d, z + Math.sin(a) * d, rnd));
       }
-      hits.push({ x, z, r: R * 0.95 });
+      hits.push({ x, z, r: R * 0.95, top: 1, kind: 'island' });
     }
   }
   return { i, j, group, hits, rings };
@@ -136,7 +136,14 @@ export function createWorld(scene) {
     }
     return hardest;
   }
-  return { update, collide, cells };
+  // What a cannonball at this spot and height would hit: 'rock', 'island' or null for open water.
+  function solidAt(x, y, z) {
+    for (const c of cells.values()) {
+      for (const h of c.hits) if (y < h.top + 0.2 && Math.hypot(x - h.x, z - h.z) < h.r) return h.kind;
+    }
+    return null;
+  }
+  return { update, collide, solidAt, cells };
 }
 
 // Light dashes that breathe in and out across the water, wrapping around the camera.

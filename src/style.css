@@ -38,6 +38,16 @@ html, body {
 #fireR { right: calc(22px + env(safe-area-inset-right)); }
 @media (pointer: fine) { .fire::after { content: attr(data-key); position: absolute; top: -12px; right: -4px; background: var(--ink); border-radius: 8px; padding: 3px 8px; font-size: 15px; } }
 
+/* Music and sound on/off, top-right. */
+#audio { position: fixed; top: calc(12px + env(safe-area-inset-top)); right: calc(14px + env(safe-area-inset-right)); display: flex; gap: 10px; }
+.round {
+  width: 46px; height: 46px; padding: 9px; border-radius: 50%; border: 4px solid var(--ink);
+  background: #fff; cursor: pointer; box-shadow: 0 3px 0 rgba(0, 0, 0, .25); position: relative;
+}
+.round svg { width: 100%; height: 100%; fill: none; stroke: var(--ink); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.round.off { opacity: .55; }
+.round.off::after { content: ''; position: absolute; left: 50%; top: 6px; bottom: 6px; width: 4px; margin-left: -2px; background: #d8452e; border-radius: 2px; transform: rotate(45deg); }
+
 /* Phones held upright: ask to turn them. */
 #rotate { position: fixed; inset: 0; background: var(--sea); color: #fff; display: none; align-items: center; justify-content: center; text-align: center; font-size: 30px; text-shadow: 0 3px 0 var(--ink); padding: 24px; }
 #rotate small { font-size: 18px; }

@@ -1,26 +1,36 @@
-// Short-lived things: cannonballs, smoke puffs, splashes.
+// Short-lived things: cannonballs, smoke puffs, splashes, and debris when a shot hits land.
 import * as THREE from 'three';
 import { toon, flat } from './stage.js';
+import { sfx } from './audio.js';
 
 const BALL = new THREE.SphereGeometry(0.22, 8, 6);
 const BALL_MAT = toon(0x20262b);
 const BLOB = new THREE.SphereGeometry(1, 8, 6);
 const RING = new THREE.RingGeometry(0.62, 1, 20).rotateX(-Math.PI / 2);
+const CHUNK = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+const LAND = {
+  rock: { chunk: toon(0x7b8089), dust: 0xdfe3e6 },
+  island: { chunk: toon(0xc99a5b), dust: 0xf2d49b },
+};
 const SPEED = 18, RANGE = 13;
 
-export function createEffects(scene) {
+// solidAt(x, y, z) -> 'rock' | 'island' | null: what a shot at that spot would hit.
+export function createEffects(scene, solidAt) {
   const live = new Set();
-  // update(t) gets seconds since it began and returns false when finished.
+  // update(u) gets 0..1 through its life; returning true ends it early.
   function add(obj, life, update, mat) {
     scene.add(obj);
     live.add({ obj, life, age: 0, update, mat });
   }
 
-  function puff(x, y, z) {
-    const mat = flat(0.9);
+  function puff(x, y, z, size = 1, color = 0xffffff) {
+    const mat = flat(0.9, color);
     const m = new THREE.Mesh(BLOB, mat);
-    m.position.set(x, y, z);
-    add(m, 0.5, (u) => { m.scale.setScalar(0.25 + u * 0.7); mat.opacity = 0.9 * (1 - u); m.position.y = y + u * 0.5; }, mat);
+    add(m, 0.5 + size * 0.1, (u) => {
+      m.position.set(x, y + u * 0.6 * size, z);
+      m.scale.setScalar((0.25 + u * 0.7) * size);
+      mat.opacity = 0.9 * (1 - u);
+    }, mat);
   }
 
   function splash(x, z, big = 1) {
@@ -39,15 +49,35 @@ export function createEffects(scene) {
     }
   }
 
+  // Shot hits a rock or an island: dust cloud and chunks thrown out.
+  function impact(x, y, z, kind) {
+    const look = LAND[kind];
+    puff(x, y, z, 1.6, look.dust);
+    for (let i = 0; i < 7; i++) {
+      const a = Math.random() * Math.PI * 2, out = 1 + Math.random() * 1.5, up = 3 + Math.random() * 3;
+      const c = new THREE.Mesh(CHUNK, look.chunk);
+      c.scale.setScalar(0.6 + Math.random() * 0.8);
+      add(c, 0.7, (u) => {
+        const t = u * 0.7;
+        c.position.set(x + Math.cos(a) * out * t * 2, Math.max(0, y + up * t - 9 * t * t), z + Math.sin(a) * out * t * 2);
+        c.rotation.set(t * 9, t * 7, 0);
+        c.visible = u < 0.95;
+      });
+    }
+    sfx.thud();
+  }
+
   // One cannonball from (x, z) heading along the unit vector (dx, dz).
   function shoot(x, z, dx, dz) {
     const m = new THREE.Mesh(BALL, BALL_MAT);
-    const T = RANGE / SPEED;
     puff(x + dx * 0.3, 0.8, z + dz * 0.3);
-    add(m, T, (u) => {
+    add(m, RANGE / SPEED, (u) => {
       const d = u * RANGE;
-      m.position.set(x + dx * d, 0.9 * (1 - u) + 5 * u * (1 - u), z + dz * d);
-      if (u >= 1) splash(x + dx * RANGE, z + dz * RANGE);
+      const px = x + dx * d, py = 0.9 * (1 - u) + 5 * u * (1 - u), pz = z + dz * d;
+      m.position.set(px, py, pz);
+      const kind = solidAt(px, py, pz);
+      if (kind) { impact(px, Math.max(py, 0.4), pz, kind); return true; }
+      if (u >= 1) { splash(px, pz); sfx.splash(); }
     });
   }
 
@@ -55,8 +85,11 @@ export function createEffects(scene) {
     for (const e of live) {
       e.age += dt;
       const u = Math.min(1, e.age / e.life);
-      e.update(u);
-      if (u >= 1) { scene.remove(e.obj); e.mat?.dispose(); live.delete(e); }
+      if (e.update(u) === true || u >= 1) {
+        scene.remove(e.obj);
+        e.mat?.dispose();
+        live.delete(e);
+      }
     }
   }
   return { shoot, splash, update };
