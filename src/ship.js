@@ -53,10 +53,12 @@ export function steer(s, stats, dt, want, throttle) {
 }
 
 const PLAYER_LOOK ={ hull: 0xb5532c, deck: 0xd9a45b, sail: 0xfff4dc, stripe: 0xd8452e, flag: 0xd8452e };
-const PLAYER_STATS = { maxSpeed: 7, turn: 2.2, reload: 1.2, hp: 100 };
+export const PLAYER_STATS = { maxSpeed: 7, turn: 2.2, reload: 1.2, hp: 100 };
+const SPIKE = new THREE.ConeGeometry(0.13, 0.7, 6).rotateZ(-Math.PI / 2); // points forward
 
 // look: colours. stats: maxSpeed, turn (radians a second), reload (seconds), hp. arcs: show aim arcs.
-export function createShip(scene, look = PLAYER_LOOK, stats = PLAYER_STATS, arcs = false) {
+// The player's stats are a copy, so gear can change them for one voyage.
+export function createShip(scene, look = PLAYER_LOOK, stats = { ...PLAYER_STATS }, arcs = false) {
   const root = new THREE.Group(); // position and heading
   const body = new THREE.Group(); // bobs, leans and sinks
   root.add(body);
@@ -76,13 +78,33 @@ export function createShip(scene, look = PLAYER_LOOK, stats = PLAYER_STATS, arcs
   body.add(new THREE.Mesh(HULL, mat(look.hull)), deck, mast, sail, stripe, flag);
 
   const muzzles = [0.5, -0.4]; // cannon spots along the hull, on both sides
-  for (const z of [-0.62, 0.62]) {
-    for (const x of muzzles) {
+  const gear = new THREE.Group(); // parts added by gear during a voyage
+  body.add(gear);
+  function cannons(x, parent) {
+    for (const z of [-0.62, 0.62]) {
       const c = new THREE.Mesh(CANNON, mat(0x2a2e33));
       c.rotation.x = Math.PI / 2; // points sideways
       c.position.set(x, 0.5, z);
-      body.add(c);
+      parent.add(c);
     }
+  }
+  muzzles.forEach((x) => cannons(x, body));
+  // Gear: a third cannon on each side, near the stern.
+  function addCannon() {
+    muzzles.push(-1.15);
+    cannons(-1.15, gear);
+  }
+  // Gear: iron spikes on the bow for ramming.
+  function addSpikes() {
+    for (const [y, z] of [[0.15, 0.2], [0.15, -0.2], [0.4, 0]]) {
+      const spike = new THREE.Mesh(SPIKE, mat(0x8a8f99));
+      spike.position.set(2, y, z);
+      gear.add(spike);
+    }
+  }
+  function resetGear() {
+    gear.clear();
+    muzzles.length = 2;
   }
 
   // Faint arcs on the water show where each side's cannons will hit.
@@ -177,7 +199,7 @@ export function createShip(scene, look = PLAYER_LOOK, stats = PLAYER_STATS, arcs
   }
 
   function reset(x, z, heading = -Math.PI / 4) {
-    Object.assign(s, { x, z, vx: 0, vz: 0, heading, lean: 0, hp: stats.hp, sinking: -1 });
+    Object.assign(s, { x, z, vx: 0, vz: 0, heading, lean: 0, hp: stats.hp, maxHp: stats.hp, sinking: -1 });
     s.cool.left = s.cool.right = 0;
   }
 
@@ -187,5 +209,5 @@ export function createShip(scene, look = PLAYER_LOOK, stats = PLAYER_STATS, arcs
   }
 
   const ready = (side) => 1 - s.cool[side] / stats.reload;
-  return { state: s, root, body, update, fire, ready, touches, hurt, reset, remove };
+  return { state: s, root, body, stats, update, fire, ready, touches, hurt, reset, remove, addCannon, addSpikes, resetGear };
 }

@@ -165,5 +165,5 @@ export function createEffects(scene, solidAt) {
   }
   // Everything still flying or fading disappears (a new battle starts).
   const clear = () => live.forEach(remove);
-  return { shoot, lob, boom, splash, shipHit, bubble, update, clear };
+  return { shoot, lob, boom, puff, splash, shipHit, bubble, update, clear };
 }

@@ -1,24 +1,28 @@
-// One battle: enemies come in waves, each harder than the last. Sink them all to win.
+// One stop at sea. A battle: enemies come in waves, sink them all to win.
+// A treasure cove: open every chest; sometimes pirates ambush you halfway through.
 import { sfx } from './audio.js';
 
-const WAVES = [
-  ['sloop', 'sloop'],
-  ['sloop', 'gunboat', 'shark'],
-  ['turtle', 'gunboat', 'sloop', 'shark'],
-];
+// show.banner(text, small): a message in the middle. show.end(won): the stop is over.
+export function createBattle(enemies, loot, show) {
+  let waves, wave, queue, timer, state = 'over', cove;
 
-// show.banner(text, small): a message in the middle. show.end(won): the battle is over.
-export function createBattle(enemies, show) {
-  let wave, queue, timer, state;
-
-  function start() {
+  // waves: lists of enemy kinds. Or for a cove: waves = [] and cove = { chests, ambush (a wave, or null) }.
+  function start(w, c = null) {
+    waves = w;
+    cove = c;
     wave = -1;
-    nextWave(1);
+    if (cove) {
+      state = 'cove';
+      timer = 0;
+      show.banner('Treasure cove', `Find all ${cove.chests} chests`);
+    } else {
+      nextWave(1);
+    }
   }
 
   function nextWave(delay) {
     wave++;
-    queue = [...WAVES[wave]];
+    queue = [...waves[wave]];
     timer = delay;
     state = 'intro';
   }
@@ -35,7 +39,7 @@ export function createBattle(enemies, show) {
     }
     if (state === 'intro') {
       if (timer > 0) return;
-      show.banner(`Wave ${wave + 1} of ${WAVES.length}`, wave === WAVES.length - 1 ? 'Last wave!' : 'Sink them all!');
+      show.banner(`Wave ${wave + 1} of ${waves.length}`, wave === waves.length - 1 ? 'Last wave!' : 'Sink them all!');
       sfx.wave();
       state = 'spawning';
       timer = 1;
@@ -45,14 +49,20 @@ export function createBattle(enemies, show) {
       timer = 1.4;
       if (!queue.length) state = 'fighting';
     } else if (state === 'fighting' && enemies.alive() === 0 && p.sinking < 0) {
-      if (wave < WAVES.length - 1) {
-        nextWave(2.5);
-      } else {
-        state = 'won';
-        timer = 2.5;
-        enemies.disarm();
-        show.banner('Victory!', 'Gathering the gold…');
-        sfx.victory();
+      if (cove) state = 'cove';
+      else if (wave < waves.length - 1) nextWave(2.5);
+      else win('Victory!', 'Gathering the gold…');
+    } else if (state === 'cove') {
+      const left = loot.chestsLeft();
+      if (cove.ambush && left <= cove.chests / 2) { // pirates were lying in wait
+        queue = cove.ambush;
+        cove.ambush = null;
+        state = 'spawning';
+        timer = 0.6;
+        show.banner('Ambush!', 'Pirates were hiding in the cove');
+        sfx.wave();
+      } else if (left === 0) {
+        win('Cove cleared!', 'Gathering the gold…');
       }
     } else if (state === 'won' && timer <= 0) {
       state = 'over';
@@ -60,5 +70,13 @@ export function createBattle(enemies, show) {
     }
   }
 
-  return { start, update, won: () => state === 'won' };
+  function win(text, small) {
+    state = 'won';
+    timer = 2.5;
+    enemies.disarm();
+    show.banner(text, small);
+    sfx.victory();
+  }
+
+  return { start, update, won: () => state === 'won', over: () => state === 'over' };
 }

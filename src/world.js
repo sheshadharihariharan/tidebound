@@ -85,7 +85,8 @@ export function createWorld(scene) {
     hits.push({ x, z, r: R * 0.95, top: 1, kind: 'island' });
   }
 
-  function build(seed) {
+  // cove: a treasure cove, with more islands and rocks to weave between.
+  function build(seed, cove = false) {
     scene.remove(group);
     group = new THREE.Group();
     hits = [];
@@ -98,14 +99,15 @@ export function createWorld(scene) {
       const a = turn + (i / n) * Math.PI * 2, d = ARENA + (rnd() - 0.5) * 1.5;
       rock(Math.cos(a) * d, Math.sin(a) * d, 1.8 + rnd() * 0.8, rnd);
     }
-    // Inside: 4 to 6 rock clusters or islands, spread out, leaving the middle open.
+    // Inside: rock clusters or islands, spread out, leaving the middle open.
     const spots = [];
-    for (let tries = 0, want = 4 + Math.floor(rnd() * 3); tries < 60 && spots.length < want; tries++) {
+    const want = cove ? 7 + Math.floor(rnd() * 3) : 4 + Math.floor(rnd() * 3), apart = cove ? 8 : 10;
+    for (let tries = 0; tries < 80 && spots.length < want; tries++) {
       const a = rnd() * 6.28, d = CLEAR + 4 + rnd() * (ARENA - CLEAR - 10);
       const x = Math.cos(a) * d, z = Math.sin(a) * d;
-      if (spots.some((s) => Math.hypot(s.x - x, s.z - z) < 10)) continue;
+      if (spots.some((s) => Math.hypot(s.x - x, s.z - z) < apart)) continue;
       spots.push({ x, z });
-      if (rnd() < 0.35) {
+      if (rnd() < (cove ? 0.55 : 0.35)) {
         island(x, z, 2.6 + rnd() * 1.2, rnd);
       } else {
         for (let k = 1 + Math.floor(rnd() * 3); k > 0; k--) rock(x + (rnd() - 0.5) * 4, z + (rnd() - 0.5) * 4, 0.9 + rnd() * 1.1, rnd);
@@ -146,13 +148,23 @@ export function createWorld(scene) {
     for (const h of hits) if (y < h.top + 0.2 && Math.hypot(x - h.x, z - h.z) < h.r) return h.kind;
     return null;
   }
+  // Up to n open spots for chests: away from the middle, from rocks and from each other.
+  function openSpots(n) {
+    const found = [];
+    for (let tries = 0; tries < 300 && found.length < n; tries++) {
+      const a = Math.random() * 6.28, d = 8 + Math.random() * (ARENA - 12);
+      const x = Math.cos(a) * d, z = Math.sin(a) * d;
+      if (clearAt(x, z, 2.5) && found.every((f) => Math.hypot(f.x - x, f.z - z) > 9)) found.push({ x, z });
+    }
+    return found;
+  }
   // Is there open water within `margin` of (x, z)?
   function clearAt(x, z, margin) {
     if (Math.hypot(x, z) > ARENA - 2 - margin) return false;
     for (const h of hits) if (Math.hypot(x - h.x, z - h.z) < h.r + margin) return false;
     return true;
   }
-  return { build, update, collide, solidAt, clearAt, hits: () => hits };
+  return { build, update, collide, solidAt, clearAt, openSpots, hits: () => hits };
 }
 
 // Light dashes that breathe in and out across the water, wrapping around the camera.

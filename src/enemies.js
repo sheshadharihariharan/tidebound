@@ -26,10 +26,15 @@ const SHARK = { aim: 1.5, charge: 1.2, restBite: 3.5, restMiss: 3.2 };
 const BLAST = 2.8; // a mine hurts everything this close
 const CRATE_CHANCE = 0.35; // a sunk enemy leaves a repair crate this often
 
-// world: rocks. fx: effects. loot: gold.
+// Gear effects on enemies.
+const SLOW = 3; // seconds a chain shot slows an enemy, to half speed
+const BURN = { time: 3, perSecond: 2 }; // a fire shot's burn
+const RAM = 12; // damage when you sail into an enemy with ram spikes
+
+// world: rocks. fx: effects. loot: gold. gear: the player's gear ids (a Set).
 // api.shoot(shots, dist): a sloop fires cannonballs at the player.
 // api.hurtPlayer(amount, x, y, z): something other than a cannonball hit the player.
-export function createEnemies(scene, world, fx, loot, api) {
+export function createEnemies(scene, world, fx, loot, api, gear) {
   const list = [];
   const bars = document.getElementById('bars');
   const mines = createMines(scene, fx, (x, z) => {
@@ -71,7 +76,7 @@ export function createEnemies(scene, world, fx, loot, api) {
       bar.className = 'ebar';
       bar.innerHTML = '<i></i>';
       bars.append(bar);
-      list.push({ kind, body, bar, roam: Math.random() < 0.5 ? 1 : -1, roamTimer: 3, aim: 0.4, timer: 2 + Math.random() * 2, mode: 'circle' });
+      list.push({ kind, body, bar, roam: Math.random() < 0.5 ? 1 : -1, roamTimer: 3, aim: 0.4, timer: 2 + Math.random() * 2, mode: 'circle', slow: 0, burn: 0, rammed: 0 });
       fx.splash(x, z, 1.4);
       return;
     }
@@ -84,12 +89,15 @@ export function createEnemies(scene, world, fx, loot, api) {
   }
 
   // Hurt an enemy. Sinks it and drops its gold when that was the last of its health.
-  function damage(e, amount, x, y, z) {
+  // quiet: no hit flash or crack (a burn ticking down).
+  function damage(e, amount, x, y, z, quiet = false) {
     const s = e.body.state;
     if (s.sinking >= 0) return;
-    if (e.kind === 'shark') fx.splash(x, z, 0.8);
-    fx.shipHit(x, y, z, KINDS[e.kind].hitColor);
-    sfx.crack();
+    if (!quiet) {
+      if (e.kind === 'shark') fx.splash(x, z, 0.8);
+      fx.shipHit(x, y, z, KINDS[e.kind].hitColor);
+      sfx.crack();
+    }
     if (e.body.hurt(amount)) {
       sfx.sink();
       const g = KINDS[e.kind].gold;
@@ -230,6 +238,15 @@ export function createEnemies(scene, world, fx, loot, api) {
       }
       const dx = p.x - s.x, dz = p.z - s.z, dist = Math.hypot(dx, dz), toP = Math.atan2(dz, dx);
       let [want, throttle] = KINDS[e.kind].think(e, dt, p, dist, toP);
+      // Gear effects: slowed by chain shot, burning from fire shot.
+      e.rammed -= dt;
+      if (e.slow > 0) { e.slow -= dt; throttle *= 0.5; }
+      if (e.burn > 0) {
+        e.burn -= dt;
+        if (Math.random() < dt * 6) fx.puff(s.x + (Math.random() - 0.5) * 1.5, 1, s.z + (Math.random() - 0.5) * 1.5, 0.7, 0xff9a3c);
+        damage(e, BURN.perSecond * dt, s.x, 1, s.z, true);
+        if (s.sinking >= 0) continue;
+      }
       // Steer around rocks a few lengths ahead (a charging shark doesn't look).
       if (e.mode !== 'charge' && !world.clearAt(s.x + Math.cos(want) * 4, s.z + Math.sin(want) * 4, 1)) want += 1.3 * e.roam;
       e.body.update(dt, t, want, throttle);
@@ -251,15 +268,23 @@ export function createEnemies(scene, world, fx, loot, api) {
   }
 
   // Ships and creatures push each other apart instead of overlapping.
+  // With ram spikes, sailing hard into an enemy hurts it.
   function separate(p) {
-    const all = [p, ...list.map((e) => e.body.state)].filter((s) => s.sinking < 0);
+    const all = [p, ...list.filter((e) => e.body.state.sinking < 0)];
+    const state = (a) => (a === p ? p : a.body.state);
     for (let i = 0; i < all.length; i++) {
       for (let j = i + 1; j < all.length; j++) {
-        const a = all[i], b = all[j], dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz);
-        if (d >= 2.4 || d === 0) continue;
+        const a = state(all[i]), b = state(all[j]), dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz);
+        if (d >= 2.4 || d === 0 || a.sinking >= 0) continue;
         const push = (2.4 - d) / 2, nx = dx / d, nz = dz / d;
         a.x -= nx * push; a.z -= nz * push;
         b.x += nx * push; b.z += nz * push;
+        const e = all[j];
+        if (a === p && gear.has('ram') && e.rammed <= 0 && p.vx * nx + p.vz * nz > 2.5) { // heading into it
+          e.rammed = 0.8;
+          sfx.bump();
+          damage(e, RAM, b.x - nx, 0.8, b.z - nz);
+        }
       }
     }
   }
@@ -267,7 +292,11 @@ export function createEnemies(scene, world, fx, loot, api) {
   // A player's cannonball at (x, y, z): damage the enemy or set off the mine it touches. Returns true on a hit.
   function hitAt(x, y, z, amount) {
     const e = list.find((e) => e.body.touches(x, y, z));
-    if (e) damage(e, amount, x, y, z);
+    if (e) {
+      if (gear.has('chain')) e.slow = SLOW;
+      if (gear.has('fire')) e.burn = BURN.time;
+      damage(e, amount, x, y, z);
+    }
     return !!e || mines.hitAt(x, y, z);
   }
 
