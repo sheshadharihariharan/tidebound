@@ -25,7 +25,13 @@ export const VOYAGES = {
       ['sloop', 'jellies', 'puffer', 'shark', 'gunboat', 'turtle']],
     theme: { rocks: [0xd9b38c, 0xc9a27a, 0xe3c39d], coral: true, sandbars: 4 },
   },
-  storm: { name: 'Storm Belt', text: 'Fire ships and the Admiral', locked: 'Coming soon' },
+  storm: {
+    name: 'Storm Belt', text: 'Fire ships, eels, harpoons and the Admiral', sea: 0x2d6a7d,
+    final: "Admiral's Bay", boss: 'flagship', harder: 2, unlock: (save) => save.crabs > 0, locked: 'Beat the Crab King to unlock',
+    pools: [['sloop', 'fireship'], ['sloop', 'fireship', 'harpoon'], ['sloop', 'fireship', 'harpoon', 'eels'],
+      ['sloop', 'fireship', 'harpoon', 'eels', 'captain', 'gunboat', 'shark']],
+    theme: { rocks: [0x5d6670, 0x4f5862, 0x6a737d], coral: false, sandbars: 0 }, storm: true,
+  },
 };
 
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
@@ -51,11 +57,12 @@ export function battleWaves(step, voyage) {
   return sizes.map((n) => fill(['sloop'], n, pool));
 }
 
-// Add random kinds to a wave until it has n; at most one gunboat, turtle or jellyfish swarm in a wave.
+// Add random kinds to a wave until it has n; at most one of each of the bigger threats in a wave.
+const ONE_EACH = ['gunboat', 'turtle', 'jellies', 'captain', 'eels', 'harpoon'];
 function fill(wave, n, pool) {
   while (wave.length < n) {
     const kind = pick(pool);
-    if (['gunboat', 'turtle', 'jellies'].includes(kind) && wave.includes(kind)) continue;
+    if (ONE_EACH.includes(kind) && wave.includes(kind)) continue;
     wave.push(kind);
   }
   return wave;

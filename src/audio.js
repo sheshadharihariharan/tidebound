@@ -13,7 +13,7 @@ const settings = (() => {
 })();
 
 let ctx = null;
-let sfxBus, musicBus, reverbSend, noiseBuffer, wash;
+let sfxBus, musicBus, reverbSend, noiseBuffer, wash, rain;
 
 function setup() {
   ctx = new AudioContext();
@@ -131,6 +131,7 @@ function startSea() {
   swell.connect(depth).connect(waves.gain);
   swell.start();
   wash = loopNoise('bandpass', 900, 0.7, 0);
+  rain = loopNoise('highpass', 2500, 0.4, rainWanted * 0.05);
 
   const gull = () => {
     if (settings.sound && ctx.state === 'running') {
@@ -150,6 +151,13 @@ export function seaSpeed(amount) {
   if (!ctx || Math.abs(amount - lastWash) < 0.03) return;
   lastWash = amount;
   wash.gain.setTargetAtTime(amount * 0.12, ctx.currentTime, 0.2);
+}
+
+// Rain hiss for the Storm Belt: 0 (none) to 1.
+let rainWanted = 0;
+export function setRain(amount) {
+  rainWanted = amount;
+  if (rain) rain.gain.setTargetAtTime(amount * 0.05, ctx.currentTime, 0.5);
 }
 
 // ---------- sound effects ----------
@@ -326,6 +334,28 @@ export const sfx = {
     tone(1200, t, 0.25, { type: 'triangle', gain: 0.12 });
     tone(1750, t, 0.18, { type: 'triangle', gain: 0.06 });
   }),
+  // Storm Belt: a fire ship's flames crackling.
+  crackle: () => play((t) => {
+    for (let i = 0; i < 4; i++) noise(t + i * 0.05 + Math.random() * 0.03, 0.03, { type: 'highpass', freq: 3000 + Math.random() * 2000, gain: 0.08 });
+  }),
+  // A harpoon fired: a twang and a whistle.
+  twang: () => play((t) => {
+    tone(180, t, 0.4, { type: 'sawtooth', gain: 0.07, slideTo: 140 });
+    tone(900, t, 0.25, { gain: 0.05, slideTo: 1400 });
+  }),
+  // Storm eels charging up: a rising electric whine.
+  charge: () => play((t) => {
+    tone(200, t, 1.1, { type: 'sawtooth', gain: 0.04, slideTo: 900, attack: 0.3 });
+    noise(t, 1.1, { type: 'bandpass', freq: 4000, q: 3, gain: 0.06 });
+  }),
+  // Thunder: a crack, then a long rolling rumble.
+  thunder: () => play((t) => {
+    noise(t, 0.15, { type: 'highpass', freq: 1500, gain: 0.25 });
+    noise(t + 0.05, 2.5, { freq: 400, freqTo: 60, gain: 0.45 });
+    tone(50, t + 0.05, 2, { gain: 0.2, slideTo: 35, attack: 0.1 });
+  }),
+  // A wind gust coming: a rising whoosh.
+  gust: () => play((t) => noise(t, 2.5, { type: 'bandpass', freq: 300, freqTo: 1200, q: 0.8, gain: 0.25 })),
   // A new wave: a short bright call on the marimba.
   wave: () => play((t) => [62, 66, 69, 74].forEach((m, i) => mallet(m, t + i * 0.09, { gain: 0.16 }))),
   // Battle won: a cheerful climb that lands on a held chord.

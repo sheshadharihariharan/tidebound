@@ -6,6 +6,7 @@ import { sfx } from './audio.js';
 const BOSS_BANNER = {
   kraken: ['The Kraken!', 'Shoot its tentacles, then its head', 'Kraken defeated!'],
   crab: ['The Crab King!', 'Shoot off its claws, then its soft middle', 'Crab King defeated!'],
+  flagship: ['The Admiral!', 'Knock out its cannons, then sink the flagship', 'Flagship sunk!'],
 };
 
 // show.banner(text, small): a message in the middle. show.end(won): the stop is over.

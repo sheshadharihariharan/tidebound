@@ -2,8 +2,9 @@
 // Also the shipyard's upgrades and what each level does.
 
 const KEY = 'tidebound-save';
-// krakens / crabs: bosses beaten (the Kraken unlocks the Coral Reef).
-const FRESH = { bank: 0, levels: { hull: 0, sails: 0, cannons: 0, purse: 0 }, voyages: 0, krakens: 0, crabs: 0, seenHelp: false };
+// krakens / crabs / admirals: bosses beaten (the Kraken unlocks the Coral Reef, the Crab King the Storm Belt).
+const FRESH = { bank: 0, levels: { hull: 0, sails: 0, cannons: 0, purse: 0 }, voyages: 0, krakens: 0, crabs: 0, admirals: 0, seenHelp: false };
+export const BEATEN = { kraken: 'krakens', crab: 'crabs', flagship: 'admirals' }; // which count each boss adds to
 
 export const save = (() => {
   try {

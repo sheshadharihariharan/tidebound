@@ -56,11 +56,13 @@ const PLAYER_LOOK ={ hull: 0xb5532c, deck: 0xd9a45b, sail: 0xfff4dc, stripe: 0xd
 export const PLAYER_STATS = { maxSpeed: 7, turn: 2.2, reload: 1.2, hp: 100 };
 const SPIKE = new THREE.ConeGeometry(0.13, 0.7, 6).rotateZ(-Math.PI / 2); // points forward
 
-// look: colours. stats: maxSpeed, turn (radians a second), reload (seconds), hp. arcs: show aim arcs.
+// look: colours. stats: maxSpeed, turn (radians a second), reload (seconds), hp, size (1 = normal). arcs: show aim arcs.
 // The player's stats are a copy, so gear can change them for one voyage.
 export function createShip(scene, look = PLAYER_LOOK, stats = { ...PLAYER_STATS }, arcs = false) {
   const root = new THREE.Group(); // position and heading
   const body = new THREE.Group(); // bobs, leans and sinks
+  const size = stats.size ?? 1;
+  root.scale.setScalar(size);
   root.add(body);
   scene.add(root);
 
@@ -183,10 +185,10 @@ export function createShip(scene, look = PLAYER_LOOK, stats = { ...PLAYER_STATS 
 
   // Is a cannonball at (x, y, z) touching this ship? The hull is treated as a short capsule.
   function touches(x, y, z) {
-    if (s.sinking >= 0 || y > 2) return false;
+    if (s.sinking >= 0 || y > 2 * size) return false;
     const fx = Math.cos(s.heading), fz = Math.sin(s.heading);
-    const along = clamp((x - s.x) * fx + (z - s.z) * fz, -1.5, 1.7);
-    return Math.hypot(x - s.x - fx * along, z - s.z - fz * along) < 0.85;
+    const along = clamp((x - s.x) * fx + (z - s.z) * fz, -1.5 * size, 1.7 * size);
+    return Math.hypot(x - s.x - fx * along, z - s.z - fz * along) < 0.85 * size;
   }
 
   // Take damage. Returns true if this hit sinks the ship.

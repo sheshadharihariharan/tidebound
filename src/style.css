@@ -174,6 +174,29 @@ body.home .fire, body.home #hud, body.home #hint, body.home #zone { display: non
 #ink.on { opacity: 1; transition: opacity .15s; }
 #ink span { position: absolute; width: 30vmax; height: 30vmax; border-radius: 50%; background: radial-gradient(circle, #1a1030 0 45%, rgba(26, 16, 48, .85) 60%, transparent 70%); transform: translate(-50%, -50%); }
 
+/* Storm Belt: slanting rain, lightning flashes, and the wind arrow. */
+#rain {
+  position: fixed; inset: 0; pointer-events: none; display: none; opacity: .5;
+  background:
+    repeating-linear-gradient(100deg, transparent 0 22px, rgba(220, 235, 245, .35) 22px 23px, transparent 23px 47px),
+    repeating-linear-gradient(104deg, transparent 0 31px, rgba(220, 235, 245, .25) 31px 32px, transparent 32px 70px);
+  background-size: 200px 200px, 260px 260px; animation: rain .35s linear infinite;
+}
+#rain.on { display: block; }
+@keyframes rain { to { background-position: -40px 200px, -50px 260px; } }
+#flash { position: fixed; inset: 0; pointer-events: none; background: #fff; opacity: 0; }
+#flash.on { animation: flash .6s; }
+@keyframes flash { 5% { opacity: .55; } 15% { opacity: .1; } 22% { opacity: .4; } 100% { opacity: 0; } }
+#wind {
+  position: fixed; top: calc(122px + env(safe-area-inset-top)); left: 50%; width: 90px; height: 34px; pointer-events: none;
+  display: none; transform-origin: 50% 50%;
+  background: var(--gold); clip-path: polygon(0 35%, 65% 35%, 65% 0, 100% 50%, 65% 100%, 65% 65%, 0 65%);
+  filter: drop-shadow(0 3px 0 var(--ink)); animation: blink .4s infinite alternate;
+}
+#wind.on { display: block; }
+#wind.blow { animation: none; }
+@keyframes blink { to { opacity: .35; } }
+
 /* Arrows at the screen edge pointing at chests you can't see yet. */
 #marks { position: fixed; inset: 0; pointer-events: none; }
 .mark { position: absolute; left: 0; top: 0; width: 0; height: 0; border-left: 26px solid var(--gold); border-top: 15px solid transparent; border-bottom: 15px solid transparent; filter: drop-shadow(0 0 0 var(--ink)) drop-shadow(0 2px 0 var(--ink)); }

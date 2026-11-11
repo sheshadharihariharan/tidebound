@@ -12,7 +12,9 @@ import { createBattle } from './battle.js';
 import { createRoute, battleWaves, ambushWave, STOPS, VOYAGES } from './voyage.js';
 import { GEAR, gearChoices } from './gear.js';
 import { showChart, hideChart, showPanel, hidePanel, gearTile, showGear, showTitle, hideTitle, icon } from './screens.js';
-import { save, store, UPGRADES, MAX_LEVEL, upgradeCost, upgradedStats, shotDamage, startGold } from './save.js';
+import { save, store, UPGRADES, MAX_LEVEL, upgradeCost, upgradedStats, shotDamage, startGold, BEATEN } from './save.js';
+import { createWeather } from './weather.js';
+import { startDevLog } from './devlog.js';
 import { unlockAudio, audioSetting, toggleAudio, sfx, seaSpeed, setMusic } from './audio.js';
 
 const PLAYER_SHOT = 5; // damage per cannonball: a pirate (30) takes about 3 good broadsides
@@ -35,8 +37,10 @@ const enemies = createEnemies(stage.scene, world, fx, loot, {
   hurtPlayer,
   shake: (amount) => { shake = Math.max(shake, amount); },
   slowPlayer: (seconds) => { p.slow = seconds; },
+  touchesPlayer: (x, y, z) => ship.touches(x, y, z),
   ink: splatInk,
 }, gear);
+const weather = createWeather(stage.scene, fx, { hurtPlayer });
 const battle = createBattle(enemies, loot, { banner, end: endStop });
 
 const $ = (id) => document.getElementById(id);
@@ -45,7 +49,7 @@ const wasReady = { left: true, right: true };
 
 // The voyage: the route, which stop was picked at each step, and the gold carried (save.bank is safe at home).
 let voyage = VOYAGES.shallows, route, path, gold = 0, stopGold = 0, stop = null;
-const BOSS_NAME = { kraken: 'the Kraken', crab: 'the Crab King' };
+const BOSS_NAME = { kraken: 'the Kraken', crab: 'the Crab King', flagship: "the Admiral's Flagship" };
 let mode = 'title'; // 'title' | 'chart' | 'sea' | 'panel'
 
 input.onFire = (side) => {
@@ -175,6 +179,7 @@ function clearSea() {
   loot.clear();
   fx.clear();
   $('ink').classList.remove('on');
+  weather.stop();
   setMusic('calm');
 }
 
@@ -236,12 +241,14 @@ function startStop(type, step) {
   fx.clear();
   world.build(Math.floor(Math.random() * 1e6), type === 'treasure' ? 'cove' : type === 'final' ? 'boss' : 'battle', voyage.theme);
   const hp = p.hp;
-  if (type === 'final') ship.reset(10, 10, -Math.PI * 0.75); // at the edge, the Kraken's lair in front
+  const edge = voyage.boss === 'flagship' ? 14 : 10; // the flagship sails a wide circle: start outside it
+  if (type === 'final') ship.reset(edge, edge, -Math.PI * 0.75); // near the edge, the boss in front
   else ship.reset(0, 0);
   p.hp = hp;
   focus.set(p.x, 0, p.z);
   stopGold = 0;
   setMusic(type === 'final' ? 'boss' : 'calm');
+  weather.start(!!voyage.storm, type === 'battle' && Math.random() < 0.6); // a waterspout in some storm battles
   if (type === 'treasure') {
     const spots = world.openSpots(4 + Math.floor(Math.random() * 3));
     spots.forEach((s) => loot.chest(s.x, s.z, 4 + Math.floor(step / 2))); // 20 to 35 gold a chest
@@ -261,7 +268,7 @@ function endStop(won) {
     save.bank += kept;
     save.voyages++;
     const opens = won && Object.values(VOYAGES).find((v) => v.unlock && !v.unlock(save)); // locked before this win
-    if (won) save[voyage.boss === 'kraken' ? 'krakens' : 'crabs']++;
+    if (won) save[BEATEN[voyage.boss]]++;
     const opened = opens && opens.unlock(save) ? `<br>The <b>${opens.name}</b> is now open!` : '';
     store();
     showPanel(won
@@ -367,6 +374,7 @@ function frame(dt) {
     shake = Math.min(0.4, hit * 0.06);
   }
   enemies.update(dt, time, p, stage.camera);
+  if (mode === 'sea') weather.update(dt, time, [p, ...enemies.list.map((e) => e.body.state)], stage.camera);
   battle.update(dt, p);
   const got = loot.update(dt, time, p, stage.camera, battle.won());
   if (got.repair) repair(got.repair);
@@ -401,8 +409,18 @@ function frame(dt) {
 world.build(1);
 showHome();
 let last = performance.now();
+// On the dev server only: report errors and a heartbeat to the laptop while testing on a phone.
+const devlog = import.meta.env.DEV ? startDevLog(stage.renderer.domElement, () =>
+  `mode=${mode} hp=${Math.round(p.hp)} enemies=${enemies.list.map((e) => `${e.kind}:${e.mode}`).join(',') || '-'}`) : null;
 stage.renderer.setAnimationLoop((now) => {
-  frame(Math.min(0.05, (now - last) / 1000));
+  const started = performance.now();
+  try {
+    frame(Math.min(0.05, (now - last) / 1000));
+  } catch (err) {
+    console.error(err); // one bad frame must never freeze the game: the next frame carries on
+    devlog?.error(err);
+  }
+  devlog?.frame(performance.now() - started);
   last = now;
 });
 

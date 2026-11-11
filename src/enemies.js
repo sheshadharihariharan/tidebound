@@ -3,11 +3,18 @@
 //   gunboat: keeps its distance and lobs shells; a red circle shows where each will land.
 //   turtle:  slow; circles you and drops floating mines behind it.
 //   shark:   circles under the water, comes up to charge, then is tired for a moment.
+//   jelly / puffer (Coral Reef): drifting stingers; a fish that puffs up and bursts spikes.
+//   fireship (Storm Belt): a burning wreck that steers straight at you and explodes.
+//   captain:  a big black-and-gold ship firing a fan of five cannonballs.
+//   harpoon:  aims a yellow line, fires a harpoon, and tows you about on its rope.
+//   eel:      storm eels come in pairs with lightning crackling between them.
 import * as THREE from 'three';
 import { createShip, wrap } from './ship.js';
-import { createTurtle, createShark, createMines, createJelly, createPuffer, PUFF_REACH } from './creatures.js';
+import { createTurtle, createShark, createMines, createJelly, createPuffer, PUFF_REACH, createFlames, createEel } from './creatures.js';
 import { createKraken } from './kraken.js';
 import { createCrab } from './crab.js';
+import { createFlagship } from './flagship.js';
+import { flat } from './stage.js';
 import { SHELL_RADIUS } from './effects.js';
 import { ARENA } from './world.js';
 import { sfx } from './audio.js';
@@ -31,7 +38,20 @@ const CRATE_CHANCE = 0.35; // a sunk enemy leaves a repair crate this often
 const STING = { damage: 5, slow: 1.5, reach: 1.5, every: 2 }; // a jellyfish: damage, seconds it slows you, how close, how often
 const PUFF = { near: 4.5, swell: 1, damage: 10, rest: 2.5 }; // a pufferfish: puffs up when this close, for this long
 const SAND_DRAG = 0.45; // ships on a sandbar only get this much of their speed
-export const BOSSES = { kraken: createKraken, crab: createCrab };
+
+const FIRESHIP = { look: { hull: 0x3a2a20, deck: 0x5a4030, sail: 0xff8a3c, stripe: 0x2a1a10, flag: 0xff8a3c }, stats: { maxSpeed: 6, turn: 1.7, reload: 99, hp: 15 } };
+const CAPTAIN = { look: { hull: 0x2e1d14, deck: 0xb08850, sail: 0x23262b, stripe: 0xffc93c, flag: 0xffc93c }, stats: { maxSpeed: 4.6, turn: 1.4, reload: 3, hp: 70, size: 1.35 } };
+const HARPOONER = { look: { hull: 0x4a5a3a, deck: 0xa8a070, sail: 0xd9d0b0, stripe: 0x4a7a3a, flag: 0x4a7a3a }, stats: { maxSpeed: 5.8, turn: 2, reload: 99, hp: 25 } };
+const FIRE = { near: 2.6, blast: 18, radius: 3.2 }; // a fire ship blows up this close, hurting everything within radius
+const FAN = [-0.3, -0.15, 0, 0.15, 0.3]; // a captain's broadside: five balls spread out
+const HARPOON = { aim: 1, speed: 22, range: 15, damage: 6, tow: 2.5, pull: 5, every: 5 }; // tow: seconds tied; pull: how hard
+const ARC = { charge: 1.2, on: 3, rest: 2.5, damage: 8, apart: 7, every: 1 }; // storm eels' lightning, in seconds
+const SPEAR = new THREE.CylinderGeometry(0.05, 0.05, 1.6, 6).rotateZ(Math.PI / 2);
+const ROPE = new THREE.CylinderGeometry(0.04, 0.04, 1, 4).translate(0, 0.5, 0);
+const AIM = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2).translate(0.5, 0, 0);
+const up = new THREE.Vector3(0, 1, 0), span = new THREE.Vector3();
+
+export const BOSSES = { kraken: createKraken, crab: createCrab, flagship: createFlagship };
 
 // Gear effects on enemies.
 const SLOW = 3; // seconds a chain shot slows an enemy, to half speed
@@ -47,14 +67,17 @@ export function createEnemies(scene, world, fx, loot, api, gear) {
   const list = [];
   let boss = null; // the Kraken or the Crab King, while it's being fought
   const bars = document.getElementById('bars');
-  const mines = createMines(scene, fx, (x, z) => {
-    if (Math.hypot(player.x - x, player.z - z) < BLAST) api.hurtPlayer(DAMAGE.mine, player.x, 1, player.z);
+  const mines = createMines(scene, fx, (x, z) => blast(x, z, DAMAGE.mine, BLAST));
+  let player = { x: 0, z: 0 }, now = 0;
+
+  // An explosion: hurts the player and every enemy within `radius`.
+  function blast(x, z, amount, radius) {
+    if (Math.hypot(player.x - x, player.z - z) < radius) api.hurtPlayer(amount, player.x, 1, player.z);
     for (const e of [...list]) {
       const s = e.body.state;
-      if (Math.hypot(s.x - x, s.z - z) < BLAST) damage(e, DAMAGE.mine, s.x, 1, s.z);
+      if (Math.hypot(s.x - x, s.z - z) < radius) damage(e, amount, s.x, 1, s.z);
     }
-  });
-  let player = { x: 0, z: 0 };
+  }
 
   const KINDS = {
     sloop: { gold: 5, barY: 3.3, hitColor: 0x8a5a33, make: () => createShip(scene, SLOOP.look, SLOOP.stats), think: sloop },
@@ -63,7 +86,36 @@ export function createEnemies(scene, world, fx, loot, api, gear) {
     shark: { gold: 4, barY: 1.9, hitColor: 0x6d8796, make: () => createShark(scene), think: shark },
     jelly: { gold: 1, barY: 1.6, hitColor: 0xff8fc8, make: () => createJelly(scene), think: jelly },
     puffer: { gold: 3, barY: 2.2, hitColor: 0xf2c14e, make: () => createPuffer(scene), think: puffer },
+    fireship: { gold: 3, barY: 3.3, hitColor: 0x3a2a20, make: makeFireship, think: fireship },
+    captain: { gold: 12, barY: 4.4, hitColor: 0x8a5a33, make: () => createShip(scene, CAPTAIN.look, CAPTAIN.stats), think: sloop },
+    harpoon: { gold: 5, barY: 3.3, hitColor: 0x8a5a33, make: makeHarpooner, think: harpoon },
+    eel: { gold: 3, barY: 2.2, hitColor: 0x2f4f5f, make: () => createEel(scene), think: eel },
   };
+
+  // A burning wreck: flames on deck.
+  function makeFireship() {
+    const ship = createShip(scene, FIRESHIP.look, FIRESHIP.stats);
+    const flames = createFlames();
+    flames.position.y = 0.3;
+    ship.body.add(flames);
+    ship.flames = flames;
+    return ship;
+  }
+
+  // A light boat with a harpoon gun: its aim line, the harpoon and its rope live in the scene.
+  function makeHarpooner() {
+    const ship = createShip(scene, HARPOONER.look, HARPOONER.stats);
+    const aim = new THREE.Mesh(AIM, flat(0, 0xffd23a));
+    aim.scale.set(HARPOON.range, 1, 0.5);
+    const spear = new THREE.Mesh(SPEAR, MORTAR_MAT), rope = new THREE.Mesh(ROPE, toon(0x8a6a40));
+    aim.visible = spear.visible = rope.visible = false;
+    scene.add(aim, spear, rope);
+    ship.gun = { aim, spear, rope };
+    ship.onSink = () => { aim.visible = spear.visible = rope.visible = false; };
+    const remove = ship.remove;
+    ship.remove = () => { remove(); scene.remove(aim, spear, rope); aim.material.dispose(); };
+    return ship;
+  }
 
   function makeGunboat() {
     const ship = createShip(scene, GUNBOAT.look, GUNBOAT.stats);
@@ -83,7 +135,11 @@ export function createEnemies(scene, world, fx, loot, api, gear) {
       const far = Math.hypot(p.x - x, p.z - z) > (tries < 30 ? 14 : 8);
       if (!far || !world.clearAt(x, z, 2.5) || list.some((e) => Math.hypot(e.body.state.x - x, e.body.state.z - z) < 6)) continue;
       if (kind === 'jellies') [0, 1, 2, 3].forEach((i) => place('jelly', x + Math.cos(i * 1.57) * 1.8, z + Math.sin(i * 1.57) * 1.8));
-      else place(kind, x, z);
+      else if (kind === 'eels') { // a pair: the leader handles the lightning between them
+        const a = place('eel', x, z), b = place('eel', x * 0.8, z * 0.8);
+        Object.assign(a, { lead: true, partner: b, angle: Math.random() * 6.28, mode: 'rest' });
+        b.partner = a;
+      } else place(kind, x, z);
       fx.splash(x, z, 1.4);
       return;
     }
@@ -97,7 +153,9 @@ export function createEnemies(scene, world, fx, loot, api, gear) {
     bar.className = 'ebar';
     bar.innerHTML = '<i></i>';
     bars.append(bar);
-    list.push({ kind, body, bar, roam: Math.random() < 0.5 ? 1 : -1, roamTimer: 3, aim: 0.4, timer: 2 + Math.random() * 2, mode: 'circle', slow: 0, burn: 0, rammed: 0 });
+    const e = { kind, body, bar, roam: Math.random() < 0.5 ? 1 : -1, roamTimer: 3, aim: 0.4, timer: 2 + Math.random() * 2, mode: 'circle', slow: 0, burn: 0, rammed: 0 };
+    list.push(e);
+    return e;
   }
 
   function drop(e) {
@@ -119,6 +177,8 @@ export function createEnemies(scene, world, fx, loot, api, gear) {
     if (e.body.hurt(amount)) {
       if (e.kind === 'jelly') sfx.plop();
       else sfx.sink();
+      e.body.onSink?.();
+      if (e.kind === 'fireship') explode(e);
       const g = KINDS[e.kind].gold;
       loot.drop(s.x, s.z, g - 1 + Math.floor(Math.random() * 3));
       // A repair crate: sometimes, and always from the last enemy left afloat.
@@ -148,7 +208,7 @@ export function createEnemies(scene, world, fx, loot, api, gear) {
         e.aim -= dt;
         if (e.aim <= 0) {
           const shots = e.body.fire(side);
-          if (shots) api.shoot(shots, dist);
+          if (shots) api.shoot(e.kind === 'captain' ? fan(s, shots[0]) : shots, dist);
           e.aim = 0.4;
         }
       }
@@ -244,6 +304,144 @@ export function createEnemies(scene, world, fx, loot, api, gear) {
     return [s.heading + 0.3 * e.roam, 0.1];
   }
 
+  // A captain's broadside: five balls fanning out from the middle of its side.
+  function fan(s, shot) {
+    const a0 = Math.atan2(shot.dz, shot.dx), x = s.x + shot.dx * 1.2, z = s.z + shot.dz * 1.2;
+    return FAN.map((a) => ({ x, z, dx: Math.cos(a0 + a), dz: Math.sin(a0 + a) }));
+  }
+
+  // Steers straight at you and blows up alongside. Sinking it sets it off too, so do it from afar.
+  function fireship(e, dt, p, dist, toP) {
+    const s = e.body.state;
+    e.body.flames.userData.flicker(now);
+    if (Math.random() < dt * 5) fx.puff(s.x + (Math.random() - 0.5), 1.8, s.z + (Math.random() - 0.5), 0.8, Math.random() < 0.5 ? 0x5a6066 : 0xff9a3c);
+    if (dist < 12 && Math.random() < dt * 1.5) sfx.crackle();
+    if (p.sinking < 0 && dist < FIRE.near) {
+      e.body.hurt(999);
+      explode(e);
+      return [s.heading, 0];
+    }
+    return p.sinking >= 0 ? roam(e, dt, toP) : [toP, 1];
+  }
+
+  function explode(e) {
+    const s = e.body.state;
+    e.body.flames.visible = false;
+    fx.boom(s.x, s.z);
+    blast(s.x, s.z, FIRE.blast, FIRE.radius);
+  }
+
+  // Keeps 8 to 12 away; aims (a yellow line), fires a harpoon, and if it hits, tows you about on the rope.
+  function harpoon(e, dt, p, dist, toP) {
+    const s = e.body.state, { aim, spear, rope } = e.body.gun;
+    e.timer -= dt;
+    if (e.mode === 'circle') {
+      if (e.timer <= 0 && dist < 14 && p.sinking < 0) {
+        e.mode = 'aim';
+        e.timer = HARPOON.aim;
+        aim.visible = true;
+        sfx.reloaded();
+      }
+      if (p.sinking >= 0) return roam(e, dt, toP);
+      if (dist > 12) return [toP, 1];
+      if (dist < 8) return [toP + Math.PI + e.roam * 0.4, 1];
+      return [toP + e.roam * Math.PI / 2, 0.6];
+    }
+    if (e.mode === 'aim') { // the yellow line follows you until it fires
+      e.dir = toP;
+      aim.position.set(s.x, 0.08, s.z);
+      aim.rotation.y = -toP;
+      aim.material.opacity = 0.35 + 0.25 * Math.sin(now * 20);
+      if (e.timer <= 0) {
+        e.mode = 'fly';
+        e.fly = 1;
+        aim.visible = false;
+        spear.visible = rope.visible = true;
+        sfx.twang();
+      }
+      return [toP, 0.1];
+    }
+    if (e.mode === 'fly') {
+      e.fly += dt * HARPOON.speed;
+      const x = s.x + Math.cos(e.dir) * e.fly, z = s.z + Math.sin(e.dir) * e.fly;
+      spear.position.set(x, 0.9, z);
+      spear.rotation.y = -e.dir;
+      tie(rope, s.x, s.z, x, z);
+      if (api.touchesPlayer(x, 0.8, z)) {
+        api.hurtPlayer(HARPOON.damage, x, 0.8, z);
+        e.mode = 'tow';
+        e.timer = HARPOON.tow;
+      } else if (e.fly > HARPOON.range || world.solidAt(x, 0.8, z)) {
+        e.mode = 'circle';
+        e.timer = HARPOON.every;
+        spear.visible = rope.visible = false;
+      }
+      return [e.dir, 0.1];
+    }
+    // Towing: the boat pulls away and drags your ship after it.
+    spear.position.set(p.x, 0.9, p.z);
+    tie(rope, s.x, s.z, p.x, p.z);
+    if (dist > 4) {
+      p.vx -= ((p.x - s.x) / dist) * HARPOON.pull * dt;
+      p.vz -= ((p.z - s.z) / dist) * HARPOON.pull * dt;
+    }
+    if (e.timer <= 0 || p.sinking >= 0) {
+      e.mode = 'circle';
+      e.timer = HARPOON.every;
+      spear.visible = rope.visible = false;
+      sfx.snap();
+    }
+    return [toP + Math.PI, 1];
+  }
+
+  // Stretch a rope between two points on the water.
+  function tie(rope, ax, az, bx, bz) {
+    span.set(bx - ax, 0, bz - az);
+    rope.position.set(ax, 0.9, az);
+    rope.scale.y = span.length();
+    rope.quaternion.setFromUnitVectors(up, span.normalize());
+  }
+
+  // Storm eels swim to either side of where you're heading, then lightning crackles between them:
+  // a flicker first, then a full bolt. Sink either eel and the lightning stops.
+  function eel(e, dt, p, dist, toP) {
+    const s = e.body.state;
+    const mate = e.partner && list.includes(e.partner) && e.partner.body.state.sinking < 0 ? e.partner : null;
+    const lead = e.lead || !mate ? e : e.partner;
+    const still = mate && (lead.mode === 'charge' || lead.mode === 'on'); // both hold still while the bolt is up
+    if (lead === e && !still) e.angle = (e.angle ?? Math.random() * 6.28) + dt * 0.3;
+    const side = e === lead ? 1 : -1, cx = p.x + p.vx * 0.8, cz = p.z + p.vz * 0.8;
+    const tx = cx + Math.cos(lead.angle) * (ARC.apart / 2) * side, tz = cz + Math.sin(lead.angle) * (ARC.apart / 2) * side;
+    let throttle = still ? 0 : Math.min(1, Math.hypot(tx - s.x, tz - s.z) / 3);
+    if (e.lead) {
+      const m = mate?.body.state;
+      if (!mate || p.sinking >= 0) {
+        e.body.arc(0, 0, 0, 0, 'off');
+      } else {
+        e.timer -= dt;
+        e.sting = (e.sting ?? 0) - dt;
+        if (e.timer <= 0) {
+          e.mode = { rest: 'charge', charge: 'on', on: 'rest' }[e.mode] ?? 'rest';
+          e.timer = ARC[e.mode] ?? ARC.rest;
+          if (e.mode === 'charge') sfx.charge();
+        }
+        e.body.arc(s.x, s.z, m.x, m.z, { rest: 'off', charge: 'charge', on: 'on' }[e.mode] ?? 'off', now, dt);
+        if (e.mode === 'on') {
+          if (Math.random() < dt * 6) sfx.zap();
+          // Is the player across the bolt?
+          const dx = m.x - s.x, dz = m.z - s.z, len = Math.hypot(dx, dz) || 1;
+          const along = clamp(((p.x - s.x) * dx + (p.z - s.z) * dz) / len, 0, len);
+          if (e.sting <= 0 && Math.hypot(p.x - s.x - (dx / len) * along, p.z - s.z - (dz / len) * along) < 1.1) {
+            e.sting = ARC.every;
+            api.hurtPlayer(ARC.damage, p.x, 1, p.z);
+            api.slowPlayer(1);
+          }
+        }
+      }
+    }
+    return [Math.atan2(tz - s.z, tx - s.x), throttle];
+  }
+
   // Drifts toward you, wobbling; stings and slows you if you sail through it.
   function jelly(e, dt, p, dist, toP) {
     e.timer -= dt;
@@ -289,6 +487,7 @@ export function createEnemies(scene, world, fx, loot, api, gear) {
   // p: the player's ship state.
   function update(dt, t, p, camera) {
     player = p;
+    now = t;
     for (const e of [...list]) {
       const s = e.body.state;
       if (s.sinking >= 0) {
@@ -333,7 +532,8 @@ export function createEnemies(scene, world, fx, loot, api, gear) {
   // Ships and creatures push each other apart instead of overlapping.
   // With ram spikes, sailing hard into an enemy hurts it.
   function separate(p) {
-    const all = [p, ...list.filter((e) => e.body.state.sinking < 0 && e.kind !== 'jelly')]; // jellyfish are soft: you sail through
+    // Jellyfish are soft and eels swim underneath, so ships pass through them.
+    const all = [p, ...list.filter((e) => e.body.state.sinking < 0 && e.kind !== 'jelly' && e.kind !== 'eel')];
     const state = (a) => (a === p ? p : a.body.state);
     for (let i = 0; i < all.length; i++) {
       for (let j = i + 1; j < all.length; j++) {
@@ -374,7 +574,7 @@ export function createEnemies(scene, world, fx, loot, api, gear) {
   // Enemies still afloat (sinking ones don't count).
   const alive = () => list.filter((e) => e.body.state.sinking < 0).length;
   // name: 'kraken' or 'crab'.
-  const summonBoss = (name) => { boss = BOSSES[name](scene, fx, loot, api); };
+  const summonBoss = (name) => { boss = BOSSES[name](scene, fx, loot, { ...api, spawn: (kind) => spawn(kind, player) }); };
   const bossBeaten = () => !!boss?.beaten();
 
   return { spawn, update, hitAt, clear, disarm: mines.clear, alive, summonBoss, bossBeaten, list };

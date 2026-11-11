@@ -216,6 +216,91 @@ export function createPuffer(scene) {
   };
 }
 
+// Flickering flames, for a fire ship's deck.
+const FLAME = new THREE.ConeGeometry(0.35, 1, 6).translate(0, 0.5, 0);
+const flameMats = [new THREE.MeshBasicMaterial({ color: 0xff7a1a }), new THREE.MeshBasicMaterial({ color: 0xffd23a })];
+flameMats.forEach((m) => { m.userData.outlineParameters = { visible: false }; });
+export function createFlames() {
+  const g = new THREE.Group();
+  const flames = [[-0.8, 0.2], [0, -0.25], [0.7, 0.15], [-0.2, 0.3], [0.3, -0.1]].map(([x, z], i) => {
+    const f = mesh(FLAME, flameMats[i % 2], [x, 0.4, z], [1, 1.2 + (i % 3) * 0.4, 1]);
+    g.add(f);
+    return f;
+  });
+  g.userData.flicker = (t) => flames.forEach((f, i) => { f.scale.y = 1 + Math.abs(Math.sin(t * 9 + i * 2.1)) * 1.1; f.scale.x = f.scale.z = 0.8 + Math.sin(t * 13 + i) * 0.15; });
+  return g;
+}
+
+// Storm eel: a striped eel whose head sticks out of the water, sparking. They come in pairs
+// with lightning crackling between them. arc(a, b, state, t) draws the bolt from this eel to its partner.
+const EEL = toon(0x2f4f5f), EEL_STRIPE = toon(0xd8f05a), SPARK = new THREE.MeshBasicMaterial({ color: 0xfff6a0 });
+SPARK.userData.outlineParameters = { visible: false };
+const BOLT = new THREE.CylinderGeometry(0.09, 0.09, 1, 5).translate(0, 0.5, 0);
+const glowMat = flat(0.35, 0xfff6a0);
+const STEPS = 8;
+export function createEel(scene) {
+  const b = createBody(scene, { maxSpeed: 3.2, turn: 2.4, hp: 15 }, { back: -1.2, front: 0.8, r: 0.7, top: 2 });
+  const head = mesh(BLOB, EEL, [0.3, 0.55, 0], [0.55, 0.5, 0.42]);
+  const neck = mesh(BLOB, EEL, [-0.3, 0.2, 0], [0.6, 0.35, 0.35]);
+  const tail = mesh(BLOB, EEL, [-1, 0, 0], [0.5, 0.25, 0.25]);
+  const stripes = [-0.1, -0.55, -0.95].map((x, i) => mesh(BLOB, EEL_STRIPE, [x, 0.38 - i * 0.15, 0], [0.12, 0.3 - i * 0.05, 0.36 - i * 0.05]));
+  const eyes = [-0.22, 0.22].map((z) => mesh(BLOB, EEL_STRIPE, [0.7, 0.7, z], [0.09, 0.09, 0.09]));
+  const tips = [-0.18, 0.18].map((z) => mesh(BLOB, SPARK, [0.2, 1.05, z], [0.1, 0.1, 0.1]));
+  b.body.add(head, neck, tail, ...stripes, ...eyes, ...tips);
+  // The bolt: a jagged chain of thin glowing sticks, and a fainter wide one around it.
+  const bolt = new THREE.Group();
+  const sticks = Array.from({ length: STEPS }, () => {
+    const core = new THREE.Mesh(BOLT, SPARK), glow = new THREE.Mesh(BOLT, glowMat);
+    glow.scale.set(3.5, 1, 3.5);
+    core.add(glow);
+    bolt.add(core);
+    return core;
+  });
+  bolt.visible = false;
+  scene.add(bolt);
+  const up = new THREE.Vector3(0, 1, 0), from = new THREE.Vector3(), to = new THREE.Vector3(), d = new THREE.Vector3();
+  let jitter = 0, pts = [];
+
+  return {
+    ...b,
+    update(dt, t, want, throttle) {
+      b.move(dt, want, throttle);
+      const sink = Math.max(0, b.state.sinking);
+      b.body.position.y = Math.sin(t * 3) * 0.08 - sink * 0.6;
+      head.rotation.z = Math.sin(t * 4) * 0.15;
+      tips.forEach((tip) => { tip.visible = Math.sin(t * 25 + tip.position.z * 10) > 0; });
+    },
+    // state: 'off', 'charge' (faint flickers) or 'on' (a full bolt).
+    arc(ax, az, bx, bz, state, t, dt) {
+      // No bolt when the two eels are on top of each other: there'd be nothing to draw (and it would divide by zero).
+      bolt.visible = state !== 'off' && (state === 'on' || Math.sin(t * 30) > 0.6) && Math.hypot(bx - ax, bz - az) > 0.5;
+      if (!bolt.visible) return;
+      jitter -= dt;
+      if (jitter <= 0 || pts.length !== STEPS + 1) { // a new jagged shape a dozen times a second
+        jitter = 0.07;
+        pts = Array.from({ length: STEPS + 1 }, (_, i) => {
+          const u = i / STEPS, wob = i === 0 || i === STEPS ? 0 : (Math.random() - 0.5) * 1.1;
+          return [ax + (bx - ax) * u - (bz - az) / Math.hypot(bx - ax, bz - az) * wob, 0.9 + (Math.random() - 0.5) * 0.5 * (wob ? 1 : 0), az + (bz - az) * u + (bx - ax) / Math.hypot(bx - ax, bz - az) * wob];
+        });
+      }
+      sticks.forEach((s, i) => {
+        from.set(...pts[i]);
+        to.set(...pts[i + 1]);
+        d.subVectors(to, from);
+        s.position.copy(from);
+        s.scale.y = d.length();
+        s.quaternion.setFromUnitVectors(up, d.normalize());
+        s.scale.x = s.scale.z = state === 'on' ? 1 : 0.5;
+      });
+    },
+    onSink() { bolt.visible = false; },
+    remove() {
+      b.remove();
+      scene.remove(bolt);
+    },
+  };
+}
+
 function createMineModel() {
   const g = new THREE.Group();
   g.add(mesh(BLOB, mat.mine, [0, 0, 0], [0.42, 0.42, 0.42]));

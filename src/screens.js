@@ -12,6 +12,7 @@ const ICONS = {
   kraken: '<path d="M6 16v-5a6 6 0 0 1 12 0v5l-2 1v3H8v-3z"/><circle cx="9.5" cy="12" r="1.6"/><circle cx="14.5" cy="12" r="1.6"/>',
   crab: '<ellipse cx="12" cy="15" rx="6" ry="4"/><path d="M7 12C4 11 3 7 5 5l2 3M17 12c3-1 4-5 2-7l-2 3M10 11V9M14 11V9M6 18l-2 2M18 18l2 2"/>',
   storm: '<path d="M7 15a4 4 0 0 1 0-8 5 5 0 0 1 9.5 1.5A3.5 3.5 0 0 1 17 15z"/><path d="M12 15l-2 4h3l-2 4"/>',
+  flagship: '<path d="M3 15h18l-3 5H6z"/><path d="M8 15V4M15 15V6M8 5l-4 7h4M15 7l4 6h-4"/>',
   lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
 };
 export const icon = (name) => `<svg viewBox="0 0 24 24">${ICONS[name]}</svg>`;
@@ -94,7 +95,7 @@ export const gearTile = (id, { price, ...extra } = {}) =>
 
 // info: { bank, voyages, krakens, crabs }. on: { sail, shipyard, help }.
 export function showTitle(info, on) {
-  const stats = info.voyages ? `Voyages: ${info.voyages} · Bosses beaten: ${info.krakens + info.crabs}` : 'A cosy voyage of cannons, coves and one very big squid';
+  const stats = info.voyages ? `Voyages: ${info.voyages} · Bosses beaten: ${info.krakens + info.crabs + info.admirals}` : 'A cosy voyage of cannons, coves and one very big squid';
   $('title').innerHTML = `
     <h1>Tidebound</h1>
     <p>${stats}</p>
