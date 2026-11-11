@@ -101,7 +101,7 @@ export function createTurtle(scene) {
 // Shark: fast and small. Swims under the water (only the fin shows) where cannonballs can't reach it,
 // comes up to charge, and is tired and easy to hit for a moment after.
 export function createShark(scene) {
-  const b = createBody(scene, { maxSpeed: 6.5, turn: 3.2, grip: 3, hp: 15 }, { back: -1.2, front: 1.3, r: 0.6, top: 1.6 });
+  const b = createBody(scene, { maxSpeed: 6.5, turn: 3.2, grip: 3, hp: 10 }, { back: -1.5, front: 1.5, r: 0.95, top: 1.8 });
   const fish = new THREE.Group();
   const torso = mesh(BLOB, mat.shark, [0, 0, 0], [1.35, 0.5, 0.52]);
   const belly = mesh(BLOB, mat.belly, [0.2, -0.12, 0], [1.05, 0.36, 0.44]);

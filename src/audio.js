@@ -260,6 +260,11 @@ export const sfx = {
     tone(140, t, 0.3, { type: 'square', gain: 0.12, slideTo: 60 });
     noise(t + 0.05, 0.25, { type: 'bandpass', freq: 800, q: 2, gain: 0.35 });
   }),
+  // Picking up a repair crate: two hammer knocks and a warm rising chime.
+  repair: () => play((t) => {
+    [0, 0.12].forEach((d) => tone(420, t + d, 0.08, { type: 'triangle', gain: 0.22, slideTo: 260 }));
+    [69, 73, 76, 81].forEach((m, i) => mallet(m, t + 0.25 + i * 0.07, { gain: 0.14 }));
+  }),
   // A new wave: a short bright call on the marimba.
   wave: () => play((t) => [62, 66, 69, 74].forEach((m, i) => mallet(m, t + i * 0.09, { gain: 0.16 }))),
   // Battle won: a cheerful climb that lands on a held chord.

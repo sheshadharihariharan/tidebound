@@ -137,9 +137,15 @@ function frame(dt) {
   enemies.update(dt, time, p, stage.camera);
   battle.update(dt, p);
   const got = loot.update(dt, time, p, battle.won());
-  if (got) {
-    gold += got;
-    battleGold += got;
+  if (got.repair) {
+    p.hp = Math.min(p.maxHp, p.hp + got.repair);
+    $('hull').classList.remove('heal');
+    void $('hull').offsetWidth; // restart the glow
+    $('hull').classList.add('heal');
+  }
+  if (got.gold) {
+    gold += got.gold;
+    battleGold += got.gold;
     $('gold').lastChild.textContent = gold;
     $('gold').classList.remove('pop');
     void $('gold').offsetWidth;

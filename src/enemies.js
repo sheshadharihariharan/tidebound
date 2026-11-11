@@ -20,8 +20,11 @@ const MORTAR_MAT = toon(0x2a2e33);
 const SIGHT = 24; // how close you must be before a sloop chases
 const BROADSIDE = 9; // the distance sloops like to fight at
 const RANGE = 12.5;
-const DAMAGE = { shell: 12, ram: 12, mine: 15 };
+const DAMAGE = { shell: 12, ram: 10, mine: 15 };
+// Shark timings in seconds: aiming (red strip showing), the charge, and resting after a bite or a miss.
+const SHARK = { aim: 1.5, charge: 1.2, restBite: 3.5, restMiss: 3.2 };
 const BLAST = 2.8; // a mine hurts everything this close
+const CRATE_CHANCE = 0.35; // a sunk enemy leaves a repair crate this often
 
 // world: rocks. fx: effects. loot: gold.
 // api.shoot(shots, dist): a sloop fires cannonballs at the player.
@@ -91,6 +94,8 @@ export function createEnemies(scene, world, fx, loot, api) {
       sfx.sink();
       const g = KINDS[e.kind].gold;
       loot.drop(s.x, s.z, g - 1 + Math.floor(Math.random() * 3));
+      // A repair crate: sometimes, and always from the last enemy left afloat.
+      if (Math.random() < CRATE_CHANCE || alive() === 0) loot.crate(s.x, s.z);
       if (e.kind === 'shark') e.body.warn(false);
     }
   }
@@ -171,7 +176,7 @@ export function createEnemies(scene, world, fx, loot, api) {
     if (e.mode === 'circle') {
       if (e.timer <= 0 && dist < 13 && p.sinking < 0) {
         e.mode = 'aim';
-        e.timer = 1;
+        e.timer = SHARK.aim;
         s.under = false;
         e.body.warn(true);
         sfx.sharkWarn();
@@ -181,7 +186,7 @@ export function createEnemies(scene, world, fx, loot, api) {
     if (e.mode === 'aim') {
       if (e.timer <= 0) {
         e.mode = 'charge';
-        e.timer = 1.1;
+        e.timer = SHARK.charge;
         e.dir = s.heading;
         e.body.warn(false);
         sfx.sharkGo();
@@ -197,19 +202,19 @@ export function createEnemies(scene, world, fx, loot, api) {
         s.vx *= -0.3;
         s.vz *= -0.3;
         e.mode = 'tired';
-        e.timer = 2.4;
+        e.timer = SHARK.restBite;
       } else if (e.timer <= 0) {
         e.mode = 'tired';
-        e.timer = 1.8;
+        e.timer = SHARK.restMiss;
       }
-      return [e.dir, 2.1];
+      return [e.dir, 1.75];
     }
     if (e.timer <= 0) { // done resting: back under
       e.mode = 'circle';
-      e.timer = 3 + Math.random() * 2;
+      e.timer = 4 + Math.random() * 3;
       s.under = true;
     }
-    return [s.heading + 0.3 * e.roam, 0.15];
+    return [s.heading + 0.3 * e.roam, 0.1];
   }
 
   // p: the player's ship state.

@@ -44,6 +44,8 @@ html, body {
 #hull i { display: block; height: 100%; width: 100%; background: #5bd16a; border-radius: 6px; transition: width .2s; }
 #hull.low i { background: #ff7a4a; }
 #hull.hit { animation: shake .25s; }
+#hull.heal { animation: heal .6s; }
+@keyframes heal { 30% { box-shadow: 0 0 0 5px #b9f5c0, 0 3px 0 rgba(0, 0, 0, .25); transform: scale(1.06); } }
 @keyframes shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
 #gold { display: flex; align-items: center; gap: 6px; color: #fff; font-size: 26px; text-shadow: 0 2px 0 var(--ink); }
 .coin { width: 24px; height: 24px; border-radius: 50%; background: var(--gold); border: 3px solid var(--ink); }
