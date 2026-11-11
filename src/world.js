@@ -1,9 +1,8 @@
-// The endless sea: rocks and small islands built from a fixed seed as the ship nears them,
+// The sea: a rock-fenced battle arena with rocks and small islands built from a seed,
 // plus drifting foam dashes so the water looks like it is moving.
 import * as THREE from 'three';
 import { toon, flat } from './stage.js';
 
-const CELL = 18, RANGE = 3;
 const ROCK = new THREE.IcosahedronGeometry(1, 0);
 const RING = new THREE.RingGeometry(1, 1.45, 24).rotateX(-Math.PI / 2);
 const SAND = new THREE.CylinderGeometry(0.9, 1, 0.6, 14);
@@ -14,7 +13,7 @@ const rockMats = [0x8a8f99, 0x7b8089, 0x9a948b].map((c) => toon(c));
 const sandMat = toon(0xf2d49b), grassMat = toon(0x4fae55), trunkMat = toon(0x7a5230), leafMat = toon(0x2f9a4a);
 const foamMat = flat(0.55);
 
-// Same cell, same rocks, every time.
+// Same seed, same rocks, every time.
 function seeded(i, j) {
   let a = (Math.imul(i, 374761393) ^ Math.imul(j, 668265263)) >>> 0;
   return () => {
@@ -47,108 +46,113 @@ function palm(x, z, rnd) {
   return g;
 }
 
-function buildCell(i, j) {
-  const group = new THREE.Group(), hits = [], rings = [];
-  const rnd = seeded(i, j);
-  const cx = (i + 0.5) * CELL, cz = (j + 0.5) * CELL;
-  const roll = rnd();
-  if (Math.hypot(cx, cz) > 16 && roll < 0.62) { // keep the start clear
-    if (roll < 0.5) {
-      for (let n = 1 + Math.floor(rnd() * 3); n > 0; n--) {
-        const x = cx + (rnd() - 0.5) * (CELL - 6), z = cz + (rnd() - 0.5) * (CELL - 6), r = 0.9 + rnd() * 1.3;
-        const rock = new THREE.Mesh(ROCK, rockMats[Math.floor(rnd() * 3)]);
-        rock.scale.set(r, r * 0.8, r);
-        rock.position.set(x, r * 0.25, z);
-        rock.rotation.y = rnd() * 6;
-        const ring = new THREE.Mesh(RING, foamMat);
-        ring.position.set(x, 0.03, z);
-        group.add(rock, ring);
-        rings.push({ ring, r: r * 1.05, phase: rnd() * 6 });
-        hits.push({ x, z, r: r * 0.95, top: r * 1.05, kind: 'rock' });
-      }
-    } else {
-      const R = 3 + rnd() * 1.5, x = cx + (rnd() - 0.5) * 4, z = cz + (rnd() - 0.5) * 4;
-      const sand = new THREE.Mesh(SAND, sandMat);
-      sand.scale.set(R, 1, R);
-      sand.position.set(x, 0.1, z);
-      const grass = new THREE.Mesh(GRASS, grassMat);
-      grass.scale.set(R, 1, R);
-      grass.position.set(x, 0.5, z);
-      const ring = new THREE.Mesh(RING, foamMat);
-      ring.position.set(x, 0.03, z);
-      group.add(sand, grass, ring);
-      rings.push({ ring, r: R * 1.02, phase: rnd() * 6 });
-      for (let n = 1 + Math.floor(rnd() * 3); n > 0; n--) {
-        const a = rnd() * 6.28, d = rnd() * R * 0.4;
-        group.add(palm(x + Math.cos(a) * d, z + Math.sin(a) * d, rnd));
-      }
-      hits.push({ x, z, r: R * 0.95, top: 1, kind: 'island' });
-    }
-  }
-  return { i, j, group, hits, rings };
-}
+// The battle arena: a ring of rocks fencing in a stretch of sea, with a few rocks and islands inside.
+// Ships start in the middle; build(seed) makes a new arena, the same one for the same seed.
+export const ARENA = 28; // radius of the rock fence
+const CLEAR = 7; // open water kept around the middle
 
 export function createWorld(scene) {
-  const root = new THREE.Group();
-  scene.add(root);
-  const cells = new Map();
+  let group = new THREE.Group(), hits = [], rings = [];
+  scene.add(group);
 
-  function update(px, pz, t) {
-    const ci = Math.floor(px / CELL), cj = Math.floor(pz / CELL);
-    for (let di = -RANGE; di <= RANGE; di++) {
-      for (let dj = -RANGE; dj <= RANGE; dj++) {
-        const key = `${ci + di},${cj + dj}`;
-        if (!cells.has(key)) {
-          const c = buildCell(ci + di, cj + dj);
-          cells.set(key, c);
-          root.add(c.group);
-        }
-      }
+  function rock(x, z, r, rnd) {
+    const m = new THREE.Mesh(ROCK, rockMats[Math.floor(rnd() * 3)]);
+    m.scale.set(r, r * 0.8, r);
+    m.position.set(x, r * 0.25, z);
+    m.rotation.y = rnd() * 6;
+    const ring = new THREE.Mesh(RING, foamMat);
+    ring.position.set(x, 0.03, z);
+    group.add(m, ring);
+    rings.push({ ring, r: r * 1.05, phase: rnd() * 6 });
+    hits.push({ x, z, r: r * 0.95, top: r * 1.05, kind: 'rock' });
+  }
+
+  function island(x, z, R, rnd) {
+    const sand = new THREE.Mesh(SAND, sandMat);
+    sand.scale.set(R, 1, R);
+    sand.position.set(x, 0.1, z);
+    const grass = new THREE.Mesh(GRASS, grassMat);
+    grass.scale.set(R, 1, R);
+    grass.position.set(x, 0.5, z);
+    const ring = new THREE.Mesh(RING, foamMat);
+    ring.position.set(x, 0.03, z);
+    group.add(sand, grass, ring);
+    rings.push({ ring, r: R * 1.02, phase: rnd() * 6 });
+    for (let n = 1 + Math.floor(rnd() * 3); n > 0; n--) {
+      const a = rnd() * 6.28, d = rnd() * R * 0.4;
+      group.add(palm(x + Math.cos(a) * d, z + Math.sin(a) * d, rnd));
     }
-    for (const [key, c] of cells) {
-      if (Math.abs(c.i - ci) > RANGE + 1 || Math.abs(c.j - cj) > RANGE + 1) {
-        root.remove(c.group);
-        cells.delete(key);
-        continue;
+    hits.push({ x, z, r: R * 0.95, top: 1, kind: 'island' });
+  }
+
+  function build(seed) {
+    scene.remove(group);
+    group = new THREE.Group();
+    hits = [];
+    rings = [];
+    scene.add(group);
+    const rnd = seeded(seed, 1);
+    // The fence: big rocks close enough together that no ship fits between them.
+    const n = 48, turn = rnd() * 6.28;
+    for (let i = 0; i < n; i++) {
+      const a = turn + (i / n) * Math.PI * 2, d = ARENA + (rnd() - 0.5) * 1.5;
+      rock(Math.cos(a) * d, Math.sin(a) * d, 1.8 + rnd() * 0.8, rnd);
+    }
+    // Inside: 4 to 6 rock clusters or islands, spread out, leaving the middle open.
+    const spots = [];
+    for (let tries = 0, want = 4 + Math.floor(rnd() * 3); tries < 60 && spots.length < want; tries++) {
+      const a = rnd() * 6.28, d = CLEAR + 4 + rnd() * (ARENA - CLEAR - 10);
+      const x = Math.cos(a) * d, z = Math.sin(a) * d;
+      if (spots.some((s) => Math.hypot(s.x - x, s.z - z) < 10)) continue;
+      spots.push({ x, z });
+      if (rnd() < 0.35) {
+        island(x, z, 2.6 + rnd() * 1.2, rnd);
+      } else {
+        for (let k = 1 + Math.floor(rnd() * 3); k > 0; k--) rock(x + (rnd() - 0.5) * 4, z + (rnd() - 0.5) * 4, 0.9 + rnd() * 1.1, rnd);
       }
-      for (const f of c.rings) f.ring.scale.setScalar(f.r * (1 + 0.05 * Math.sin(t * 1.5 + f.phase)));
     }
   }
 
-  // Push the ship out of rocks and bounce it. Returns how hard it hit (0 if it didn't).
+  function update(t) {
+    for (const f of rings) f.ring.scale.setScalar(f.r * (1 + 0.05 * Math.sin(t * 1.5 + f.phase)));
+  }
+
+  // Push a ship out of rocks and bounce it. Returns how hard it hit (0 if it didn't).
   function collide(s, radius = 1) {
     let hardest = 0;
-    for (const c of cells.values()) {
-      for (const h of c.hits) {
-        const dx = s.x - h.x, dz = s.z - h.z, d = Math.hypot(dx, dz), min = h.r + radius;
-        if (d >= min || d === 0) continue;
-        const nx = dx / d, nz = dz / d, vn = s.vx * nx + s.vz * nz;
-        s.x = h.x + nx * min;
-        s.z = h.z + nz * min;
-        if (vn < 0) {
-          s.vx -= 1.3 * vn * nx;
-          s.vz -= 1.3 * vn * nz;
-          hardest = Math.max(hardest, -vn);
-          s.hitX = h.x + nx * h.r;
-          s.hitZ = h.z + nz * h.r;
-        }
+    const out = Math.hypot(s.x, s.z) - (ARENA - 1);
+    if (out > 0) { // backstop in case anything squeezes through the fence
+      s.x *= (ARENA - 1) / (ARENA - 1 + out);
+      s.z *= (ARENA - 1) / (ARENA - 1 + out);
+    }
+    for (const h of hits) {
+      const dx = s.x - h.x, dz = s.z - h.z, d = Math.hypot(dx, dz), min = h.r + radius;
+      if (d >= min || d === 0) continue;
+      const nx = dx / d, nz = dz / d, vn = s.vx * nx + s.vz * nz;
+      s.x = h.x + nx * min;
+      s.z = h.z + nz * min;
+      if (vn < 0) {
+        s.vx -= 1.3 * vn * nx;
+        s.vz -= 1.3 * vn * nz;
+        hardest = Math.max(hardest, -vn);
+        s.hitX = h.x + nx * h.r;
+        s.hitZ = h.z + nz * h.r;
       }
     }
     return hardest;
   }
   // What a cannonball at this spot and height would hit: 'rock', 'island' or null for open water.
   function solidAt(x, y, z) {
-    for (const c of cells.values()) {
-      for (const h of c.hits) if (y < h.top + 0.2 && Math.hypot(x - h.x, z - h.z) < h.r) return h.kind;
-    }
+    for (const h of hits) if (y < h.top + 0.2 && Math.hypot(x - h.x, z - h.z) < h.r) return h.kind;
     return null;
   }
   // Is there open water within `margin` of (x, z)?
   function clearAt(x, z, margin) {
-    for (const c of cells.values()) for (const h of c.hits) if (Math.hypot(x - h.x, z - h.z) < h.r + margin) return false;
+    if (Math.hypot(x, z) > ARENA - 2 - margin) return false;
+    for (const h of hits) if (Math.hypot(x - h.x, z - h.z) < h.r + margin) return false;
     return true;
   }
-  return { update, collide, solidAt, clearAt, cells };
+  return { build, update, collide, solidAt, clearAt, hits: () => hits };
 }
 
 // Light dashes that breathe in and out across the water, wrapping around the camera.

@@ -19,14 +19,14 @@ export function createLoot(scene) {
     }
   }
 
-  // Returns the gold picked up this frame.
-  function update(dt, t, p) {
+  // Returns the gold picked up this frame. all: every coin flies to the ship (the battle is won).
+  function update(dt, t, p, all = false) {
     let gold = 0;
     for (const c of coins) {
       c.age += dt;
       const dx = p.x - c.x, dz = p.z - c.z, d = Math.hypot(dx, dz);
-      if (p.sinking < 0 && d < MAGNET && c.age > 0.6) {
-        const pull = Math.min(d, dt * (6 + (MAGNET - d) * 4));
+      if (p.sinking < 0 && (d < MAGNET || all) && c.age > 0.6) {
+        const pull = Math.min(d, dt * (all ? 10 + d * 2 : 6 + (MAGNET - d) * 4));
         c.x += (dx / d) * pull;
         c.z += (dz / d) * pull;
       }
@@ -46,5 +46,10 @@ export function createLoot(scene) {
     return gold;
   }
 
-  return { drop, update };
+  function clear() {
+    coins.forEach((c) => scene.remove(c.m));
+    coins.clear();
+  }
+
+  return { drop, update, clear };
 }

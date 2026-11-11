@@ -224,6 +224,51 @@ export const sfx = {
     tone(880, t, 0.04, { type: 'triangle', gain: 0.1 });
     tone(620, t + 0.05, 0.05, { type: 'triangle', gain: 0.08 });
   }),
+
+  // Gunboat: a hollow mortar thump, then a falling whistle while the shell is up.
+  mortar: (flight) => play((t) => {
+    tone(70, t, 0.5, { gain: 0.5, slideTo: 32 });
+    noise(t, 0.35, { freq: 600, freqTo: 120, gain: 0.3 });
+    tone(1500, t + 0.25, flight - 0.25, { gain: 0.035, slideTo: 450, attack: 0.3 });
+  }),
+  // The shell landing: a deep boom with a heavy splash.
+  shell: () => play((t) => {
+    tone(80, t, 0.6, { gain: 0.5, slideTo: 30 });
+    noise(t, 0.7, { freq: 1600, freqTo: 140, gain: 0.35 });
+  }),
+  // A mine going off: the biggest bang in the game.
+  boom: () => play((t) => {
+    tone(60, t, 0.9, { gain: 0.65, slideTo: 25 });
+    noise(t, 0.9, { freq: 3000, freqTo: 100, gain: 0.45 });
+    noise(t, 0.05, { type: 'highpass', freq: 3000, gain: 0.3 });
+  }),
+  // A mine dropped into the water: a small plop.
+  plop: () => play((t) => tone(380, t, 0.12, { gain: 0.12, slideTo: 760 })),
+  // A mine nearby: a short blip, higher when it is very close.
+  beep: (close) => play((t) => tone(close ? 1320 : 990, t, 0.07, { type: 'square', gain: 0.035 })),
+  // A shark about to charge: two low warning notes.
+  sharkWarn: () => play((t) => {
+    tone(hz(40), t, 0.3, { type: 'sawtooth', gain: 0.07, attack: 0.02 });
+    tone(hz(41), t + 0.4, 0.3, { type: 'sawtooth', gain: 0.08, attack: 0.02 });
+    noise(t, 0.4, { type: 'bandpass', freq: 1200, gain: 0.12 });
+  }),
+  // The shark's charge: a rushing whoosh.
+  sharkGo: () => play((t) => noise(t, 0.8, { type: 'bandpass', freq: 500, freqTo: 2500, q: 1.2, gain: 0.3 })),
+  // The shark's bite on the hull: a snap and a crunch.
+  bite: () => play((t) => {
+    noise(t, 0.06, { type: 'highpass', freq: 2000, gain: 0.4 });
+    tone(140, t, 0.3, { type: 'square', gain: 0.12, slideTo: 60 });
+    noise(t + 0.05, 0.25, { type: 'bandpass', freq: 800, q: 2, gain: 0.35 });
+  }),
+  // A new wave: a short bright call on the marimba.
+  wave: () => play((t) => [62, 66, 69, 74].forEach((m, i) => mallet(m, t + i * 0.09, { gain: 0.16 }))),
+  // Battle won: a cheerful climb that lands on a held chord.
+  victory: () => play((t) => {
+    [62, 66, 69, 74, 78].forEach((m, i) => mallet(m, t + i * 0.11, { gain: 0.18 }));
+    [74, 78, 81].forEach((m) => mallet(m, t + 0.7, { gain: 0.14, dur: 1.4 }));
+  }),
+  // Ship lost: a soft, falling phrase.
+  defeat: () => play((t) => [69, 66, 64, 62].forEach((m, i) => mallet(m, t + i * 0.28, { gain: 0.14, dur: 0.9 }))),
 };
 
 // ---------- music: a gentle sea waltz in 3/4, D – Bm – G – A ----------

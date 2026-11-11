@@ -30,7 +30,29 @@ const DISC = new THREE.CircleGeometry(1, 16).rotateX(-Math.PI / 2);
 const mats = new Map();
 const mat = (c) => mats.get(c) ?? mats.set(c, toon(c)).get(c); // ships of one colour share materials
 
-const PLAYER_LOOK = { hull: 0xb5532c, deck: 0xd9a45b, sail: 0xfff4dc, stripe: 0xd8452e, flag: 0xd8452e };
+// Turn toward `want` and speed up or slow down with a little drift. Shared by ships and sea creatures.
+// stats: maxSpeed, turn (radians a second), grip (how quickly speed catches up; default 1.4).
+// throttle can go above 1 for a burst (a shark's charge). Returns how far it turned.
+export function steer(s, stats, dt, want, throttle) {
+  let turn = 0;
+  if (want === null) {
+    throttle = 0;
+  } else {
+    const diff = wrap(want - s.heading);
+    turn = clamp(diff, -stats.turn * dt, stats.turn * dt);
+    s.heading += turn;
+    throttle *= 0.4 + 0.6 * Math.max(0, Math.cos(diff));
+  }
+  const k = 1 - Math.exp(-dt * (stats.grip ?? 1.4));
+  s.vx += (Math.cos(s.heading) * throttle * stats.maxSpeed - s.vx) * k;
+  s.vz += (Math.sin(s.heading) * throttle * stats.maxSpeed - s.vz) * k;
+  s.x += s.vx * dt;
+  s.z += s.vz * dt;
+  s.speed = Math.hypot(s.vx, s.vz);
+  return turn;
+}
+
+const PLAYER_LOOK ={ hull: 0xb5532c, deck: 0xd9a45b, sail: 0xfff4dc, stripe: 0xd8452e, flag: 0xd8452e };
 const PLAYER_STATS = { maxSpeed: 7, turn: 2.2, reload: 1.2, hp: 100 };
 
 // look: colours. stats: maxSpeed, turn (radians a second), reload (seconds), hp. arcs: show aim arcs.
@@ -94,24 +116,8 @@ export function createShip(scene, look = PLAYER_LOOK, stats = PLAYER_STATS, arcs
 
   // want: heading to turn toward (or null to coast). throttle: 0..1.
   function update(dt, t, want = null, throttle = 0) {
-    let turn = 0;
-    if (s.sinking >= 0) {
-      s.sinking += dt;
-      throttle = 0;
-    } else if (want !== null) {
-      const diff = wrap(want - s.heading);
-      turn = clamp(diff, -stats.turn * dt, stats.turn * dt);
-      s.heading += turn;
-      throttle *= 0.4 + 0.6 * Math.max(0, Math.cos(diff));
-    } else {
-      throttle = 0;
-    }
-    const k = 1 - Math.exp(-dt * 1.4); // slow catch-up: the ship drifts a little
-    s.vx += (Math.cos(s.heading) * throttle * stats.maxSpeed - s.vx) * k;
-    s.vz += (Math.sin(s.heading) * throttle * stats.maxSpeed - s.vz) * k;
-    s.x += s.vx * dt;
-    s.z += s.vz * dt;
-    s.speed = Math.hypot(s.vx, s.vz);
+    if (s.sinking >= 0) s.sinking += dt;
+    const turn = steer(s, stats, dt, s.sinking >= 0 ? null : want, throttle);
     for (const side of ['left', 'right']) s.cool[side] = Math.max(0, s.cool[side] - dt);
 
     s.lean += (clamp((-turn / dt) * 0.12, -0.3, 0.3) - s.lean) * Math.min(1, dt * 6);
@@ -181,5 +187,5 @@ export function createShip(scene, look = PLAYER_LOOK, stats = PLAYER_STATS, arcs
   }
 
   const ready = (side) => 1 - s.cool[side] / stats.reload;
-  return { state: s, root, update, fire, ready, touches, hurt, reset, remove };
+  return { state: s, root, body, update, fire, ready, touches, hurt, reset, remove };
 }

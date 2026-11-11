@@ -8,6 +8,7 @@ import { createWorld, createFoam } from './world.js';
 import { createEffects } from './effects.js';
 import { createEnemies } from './enemies.js';
 import { createLoot } from './loot.js';
+import { createBattle } from './battle.js';
 import { unlockAudio, audioSetting, toggleAudio, sfx, seaSpeed } from './audio.js';
 
 const PLAYER_SHOT = 5; // damage per cannonball: a pirate (30) takes about 3 good broadsides
@@ -20,15 +21,19 @@ const fx = createEffects(stage.scene, world.solidAt);
 const loot = createLoot(stage.scene);
 const ship = createShip(stage.scene, undefined, undefined, true);
 const p = ship.state;
-const enemies = createEnemies(stage.scene, world, fx, loot, (shots, dist) => {
-  shots.forEach((c) => fx.shoot(c.x, c.z, c.dx, c.dz, hitPlayer));
-  sfx.cannon(shots.length, Math.max(0.3, 0.9 - dist / 25));
+const enemies = createEnemies(stage.scene, world, fx, loot, {
+  shoot(shots, dist) {
+    shots.forEach((c) => fx.shoot(c.x, c.z, c.dx, c.dz, hitPlayer));
+    sfx.cannon(shots.length, Math.max(0.3, 0.9 - dist / 25));
+  },
+  hurtPlayer,
 });
+const battle = createBattle(enemies, { banner, end });
 
 const $ = (id) => document.getElementById(id);
 const fireButtons = { left: $('fireL'), right: $('fireR') };
 const wasReady = { left: true, right: true };
-let gold = 0;
+let gold = 0, battleGold = 0;
 
 input.onFire = (side) => {
   const shots = ship.fire(side);
@@ -40,24 +45,58 @@ input.onFire = (side) => {
 // A pirate cannonball at (x, y, z): does it hit us?
 function hitPlayer(x, y, z) {
   if (!ship.touches(x, y, z)) return false;
+  hurtPlayer(PIRATE_SHOT, x, y, z);
+  return true;
+}
+
+// Anything that damages us: a flash, a crunch and a shake.
+function hurtPlayer(amount, x, y, z) {
+  if (p.sinking >= 0) return;
   fx.shipHit(x, y, z);
   sfx.hurt();
   shake = 0.35;
   $('hull').classList.remove('hit');
   void $('hull').offsetWidth; // restart the shake animation
   $('hull').classList.add('hit');
-  if (ship.hurt(PIRATE_SHOT)) {
-    sfx.sink();
-    banner('Your ship sank!', 'Back to the start…');
-  }
-  return true;
+  if (ship.hurt(amount)) sfx.sink();
 }
 
 function banner(text, small = '') {
   $('banner').innerHTML = `${text}<small>${small}</small>`;
   $('banner').classList.add('on');
-  setTimeout(() => $('banner').classList.remove('on'), 2600);
+  clearTimeout(banner.timer);
+  banner.timer = setTimeout(() => $('banner').classList.remove('on'), 2400);
 }
+
+// The battle is over: show the result and a button to start the next one.
+function end(won) {
+  $('banner').classList.remove('on');
+  $('panel').classList.toggle('lost', !won);
+  $('panel').querySelector('h1').textContent = won ? 'Victory!' : 'Sunk!';
+  $('panel').querySelector('p').innerHTML = won
+    ? `All three waves sunk.<br>You won <b>${battleGold}</b> gold.`
+    : `The sea won this time.<br>You found <b>${battleGold}</b> gold.`;
+  $('again').textContent = won ? 'Sail again' : 'Try again';
+  $('panel').classList.add('on');
+  setTimeout(() => $('again').focus(), 50); // Enter or Space works on a keyboard
+}
+
+// A fresh arena, the ship in the middle and fully repaired, wave 1 on its way.
+function newBattle() {
+  $('panel').classList.remove('on');
+  enemies.clear();
+  loot.clear();
+  fx.clear();
+  world.build(Math.floor(Math.random() * 1e6));
+  ship.reset(0, 0);
+  focus.set(0, 0, 0);
+  battleGold = 0;
+  battle.start();
+}
+$('again').onclick = () => {
+  sfx.click();
+  newBattle();
+};
 
 // Sound starts on the first tap; music and sound buttons in the top-right corner.
 unlockAudio();
@@ -88,7 +127,7 @@ function frame(dt) {
   // Thumbstick on the screen -> heading in the world (the camera looks along (1,1,1)).
   const want = mag > 0.12 ? Math.atan2(-input.x - input.y, input.x - input.y) : null;
   ship.update(dt, time, want, Math.min(1, mag * 1.3));
-  world.update(p.x, p.z, time);
+  world.update(time);
   const hit = world.collide(p);
   if (hit > 1) { // bump: splash, knock and a little camera shake
     fx.splash(p.hitX, p.hitZ, 0.8);
@@ -96,20 +135,17 @@ function frame(dt) {
     shake = Math.min(0.4, hit * 0.06);
   }
   enemies.update(dt, time, p, stage.camera);
-  const got = loot.update(dt, time, p);
+  battle.update(dt, p);
+  const got = loot.update(dt, time, p, battle.won());
   if (got) {
     gold += got;
+    battleGold += got;
     $('gold').lastChild.textContent = gold;
     $('gold').classList.remove('pop');
     void $('gold').offsetWidth;
     $('gold').classList.add('pop');
   }
-  if (p.sinking >= 0 && Math.random() < dt * 8) fx.bubble(p.x, p.z);
-  if (p.sinking > 3) { // back to the start, fully repaired
-    enemies.clear();
-    ship.reset(0, 0);
-    focus.set(0, 0, 0);
-  }
+  if (p.sinking >= 0 && p.sinking < 4 && Math.random() < dt * 8) fx.bubble(p.x, p.z);
   foam(p.x, p.z, time);
   fx.update(dt);
   seaSpeed(Math.min(1, p.speed / 7));
@@ -132,6 +168,7 @@ function frame(dt) {
   stage.render();
 }
 
+newBattle();
 let last = performance.now();
 stage.renderer.setAnimationLoop((now) => {
   frame(Math.min(0.05, (now - last) / 1000));
@@ -139,4 +176,4 @@ stage.renderer.setAnimationLoop((now) => {
 });
 
 // Lets the browser console inspect the game while developing.
-if (import.meta.env.DEV) window.game = { stage, ship, world, enemies, frame };
+if (import.meta.env.DEV) window.game = { stage, ship, world, enemies, battle, loot, fx, frame, newBattle };
