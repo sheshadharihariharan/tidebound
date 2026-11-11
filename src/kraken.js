@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { toon, flat } from './stage.js';
 import { sfx } from './audio.js';
+import { SHELL_RADIUS } from './effects.js';
 
 const SEG = new THREE.SphereGeometry(1, 10, 8);
 const RING = new THREE.RingGeometry(0.8, 1, 28).rotateX(-Math.PI / 2);
@@ -13,9 +14,12 @@ const STRIP = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2).translate(0.5,
 const skin = toon(0x8e55b0), tip = toon(0xf0b4d8), white = toon(0xffffff), dark = toon(0x1d2326), belly = toon(0xb98ad0);
 
 const N = 9, LEN = 0.85; // tentacle segments and the gap between them
-const T = { ripple: 1.3, rise: 0.5, aim: 0.8, slam: 0.22, down: 3.4, sink: 0.8 }; // a tentacle's attack, in seconds
-const TENTACLES = 4, TENTACLE_HP = [20, 12], HEAD_HP = 60, HEAD_UP = 9;
-const DAMAGE = { slam: 14, burst: 8 };
+const T = { ripple: 1.2, rise: 0.5, aim: 0.7, slam: 0.22, down: 3, sink: 0.8 }; // a tentacle's attack, in seconds
+const TENTACLES = 4, TENTACLE_HP = [26, 16], HEAD_HP = 80, HEAD_UP = 8;
+const DAMAGE = { slam: 16, burst: 8, spit: 12 };
+const BUSY = [2, 3]; // tentacles attacking at once: in the first round, then later rounds
+const GAP = { first: 2, less: 0.3, least: 1.2 }; // seconds between attacks: drops each round, down to `least`
+const SPIT = { every: 2.2, flight: 1.5 }; // while its head is up, it spits ink balls at you
 const ease = (u) => u * u * (3 - 2 * u);
 const ball = new THREE.Vector3();
 
@@ -25,7 +29,7 @@ export function createKraken(scene, fx, loot, api) {
   scene.add(root);
   const tentacles = Array.from({ length: TENTACLES }, makeTentacle);
   const head = makeHead();
-  let round = 0, next = 2, phase = 'tentacles', phaseTime = 0, inked = 0;
+  let round = 0, next = 2, phase = 'tentacles', phaseTime = 0, inked = 0, spit = 0;
   const bar = document.getElementById('boss');
   bar.classList.add('on');
   drawBar();
@@ -188,9 +192,9 @@ export function createKraken(scene, fx, loot, api) {
       next -= dt;
       const busy = tentacles.filter((k) => k.state !== 'idle' && k.state !== 'gone').length;
       const ready = tentacles.filter((k) => k.state === 'idle');
-      if (next <= 0 && busy < 2 && ready.length && p.sinking < 0) {
+      if (next <= 0 && busy < BUSY[Math.min(1, round)] && ready.length && p.sinking < 0) {
         attack(ready[Math.floor(Math.random() * ready.length)], p);
-        next = 2.4 - round * 0.3;
+        next = Math.max(GAP.least, GAP.first - round * GAP.less);
       }
       if (tentacles.every((k) => k.state === 'gone')) {
         phase = 'head';
@@ -202,6 +206,15 @@ export function createKraken(scene, fx, loot, api) {
       }
     } else if (phase === 'head') {
       if (phaseTime > 1.4 && inked === 0 || phaseTime > 5.5 && inked === 1) { inked++; api.ink(); sfx.ink(); }
+      spit -= dt;
+      if (spit <= 0 && phaseTime > 1.2 && p.sinking < 0) { // an ink ball lobbed at where you're heading
+        spit = SPIT.every;
+        const tx = p.x + p.vx * SPIT.flight * 0.6 + (Math.random() - 0.5) * 2, tz = p.z + p.vz * SPIT.flight * 0.6 + (Math.random() - 0.5) * 2;
+        fx.lob(0, 0, tx, tz, SPIT.flight, (x, z) => {
+          if (p.sinking < 0 && Math.hypot(p.x - x, p.z - z) < SHELL_RADIUS + 0.6) api.hurtPlayer(DAMAGE.spit, p.x, 1, p.z);
+        });
+        sfx.ink();
+      }
       if (Math.random() < dt * 4) fx.bubble((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6);
       if (phaseTime > HEAD_UP) { phase = 'dive'; phaseTime = 0; sfx.splashBig(); }
     } else if (phase === 'dive' && phaseTime > 1.2) { // tentacles grow back, a little weaker
