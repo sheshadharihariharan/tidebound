@@ -272,6 +272,38 @@ export const sfx = {
   }),
   // Buying in port, or picking up gear: a short till ring.
   buy: () => play((t) => [81, 88].forEach((m, i) => mallet(m, t + i * 0.08, { gain: 0.16 }))),
+  // Kraken: the water rumbling where a tentacle is about to burst up.
+  rumble: () => play((t) => {
+    tone(45, t, 1.3, { type: 'sawtooth', gain: 0.06, attack: 0.6 });
+    noise(t, 1.2, { freq: 300, freqTo: 120, gain: 0.18 });
+  }),
+  // A big splash: a tentacle bursting up, or the head diving.
+  splashBig: () => play((t) => {
+    noise(t, 0.9, { freq: 2000, freqTo: 200, gain: 0.35 });
+    tone(150, t, 0.4, { gain: 0.25, slideTo: 50 });
+  }),
+  // A tentacle slamming down on the water.
+  slam: () => play((t) => {
+    tone(55, t, 0.7, { gain: 0.65, slideTo: 28 });
+    noise(t, 0.8, { freq: 2500, freqTo: 150, gain: 0.5 });
+    noise(t, 0.04, { type: 'highpass', freq: 3000, gain: 0.3 });
+  }),
+  // The Kraken's roar when its head comes up (and when it's beaten).
+  roar: () => play((t) => {
+    tone(110, t, 1.2, { type: 'sawtooth', gain: 0.12, slideTo: 70, attack: 0.2 });
+    tone(73, t, 1.3, { type: 'sawtooth', gain: 0.1, slideTo: 55, attack: 0.25 });
+    noise(t, 1.2, { type: 'bandpass', freq: 400, q: 1, gain: 0.22 });
+  }),
+  // Ink squirting at the screen.
+  ink: () => play((t) => {
+    tone(400, t, 0.25, { gain: 0.15, slideTo: 120 });
+    noise(t, 0.3, { type: 'bandpass', freq: 900, gain: 0.25 });
+  }),
+  // A cannonball thumping into the Kraken.
+  squish: () => play((t) => {
+    tone(220, t, 0.15, { type: 'triangle', gain: 0.25, slideTo: 120 });
+    noise(t, 0.1, { type: 'bandpass', freq: 1200, gain: 0.25 });
+  }),
   // A new wave: a short bright call on the marimba.
   wave: () => play((t) => [62, 66, 69, 74].forEach((m, i) => mallet(m, t + i * 0.09, { gain: 0.16 }))),
   // Battle won: a cheerful climb that lands on a held chord.
@@ -306,22 +338,60 @@ const MELODY = [
 ];
 const LOOP_STEPS = CHORDS.length * BAR;
 
+// The Kraken fight: the same 3/4 lilt, but faster, in D minor, with drums.
+const Dm = { bass: 50, notes: [62, 65, 69] };
+const Bb = { bass: 46, notes: [58, 62, 65] };
+const C = { bass: 48, notes: [60, 64, 67] };
+const Gm = { bass: 43, notes: [55, 58, 62] };
+const BOSS_MELODY = [
+  [0, 74, 1], [1, 72, 1], [2, 74, 2], [4, 69, 2],
+  [6, 70, 1], [7, 69, 1], [8, 70, 2], [10, 65, 2],
+  [12, 67, 1], [13, 69, 1], [14, 70, 2], [16, 72, 2],
+  [18, 73, 3], [22, 69, 2],
+  [24, 74, 1], [25, 76, 1], [26, 77, 2], [28, 74, 2],
+  [30, 77, 1], [31, 76, 1], [32, 74, 2], [34, 70, 2],
+  [36, 70, 1], [37, 72, 1], [38, 74, 2], [40, 70, 2],
+  [42, 73, 2], [44, 76, 2], [46, 73, 2],
+];
+const SONGS = {
+  calm: { eighth: EIGHTH, chords: CHORDS, melody: MELODY },
+  boss: { eighth: 60 / 126 / 2, chords: [Dm, Bb, C, A, Dm, Bb, Gm, A], melody: BOSS_MELODY },
+};
+let song = SONGS.calm;
+
+// Switch tunes: 'calm' (the sea waltz) or 'boss' (the Kraken). Starts the new tune from its first bar.
+export function setMusic(name) {
+  if (song === SONGS[name]) return;
+  song = SONGS[name];
+  nextStep = 0;
+  loop = 0;
+}
+
 let nextStep = 0, nextTime = 0, loop = 0;
 
 function scheduleStep(step, at) {
   const bar = Math.floor(step / BAR);
-  const chord = CHORDS[bar];
+  const chord = song.chords[bar];
   const beat = step % BAR;
-  const bus = musicBus;
+  const bus = musicBus, E = song.eighth;
+  if (song === SONGS.boss) {
+    // Driving bass on every beat, a low drum, short chord stabs, the tune every time round.
+    if (beat % 2 === 0) tone(hz(chord.bass - (beat === 0 ? 12 : 0)), at, E * 1.6, { type: 'triangle', gain: 0.4, attack: 0.01, bus });
+    if (beat === 0 || beat === 3) tone(90, at, 0.25, { gain: 0.3, slideTo: 45, bus });
+    if (beat === 2 || beat === 4) chord.notes.forEach((m) => mallet(m, at, { gain: 0.06, dur: 0.25, bus }));
+    noise(at, 0.04, { type: 'highpass', freq: 7000, gain: beat % 2 ? 0.015 : 0.03, bus });
+    for (const [s, m, l] of song.melody) if (s === step) mallet(m, at, { gain: 0.17, dur: Math.max(0.3, l * E * 1.4), bus });
+    return;
+  }
   // Oom-pah-pah: bass on one, soft chords on two and three.
-  if (beat === 0) tone(hz(chord.bass), at, EIGHTH * 4, { type: 'triangle', gain: 0.35, attack: 0.02, bus });
+  if (beat === 0) tone(hz(chord.bass), at, E * 4, { type: 'triangle', gain: 0.35, attack: 0.02, bus });
   if (beat === 2 || beat === 4) chord.notes.forEach((m, i) => mallet(m, at + i * 0.015, { gain: 0.07, dur: 0.45, bus }));
   if (beat % 2 === 1) noise(at, 0.05, { type: 'highpass', freq: 6500, gain: 0.02, bus });
   // Melody every other time round; long held tones in between so it doesn't get tiring.
   if (loop % 2 === 0) {
-    for (const [s, m, l] of MELODY) if (s === step) mallet(m, at, { gain: 0.19, dur: Math.max(0.45, l * EIGHTH * 1.5), bus });
+    for (const [s, m, l] of song.melody) if (s === step) mallet(m, at, { gain: 0.19, dur: Math.max(0.45, l * E * 1.5), bus });
   } else if (beat === 0 && bar % 2 === 0) {
-    tone(hz(chord.notes[1] + 12), at, EIGHTH * 11, { gain: 0.06, attack: 0.5, bus });
+    tone(hz(chord.notes[1] + 12), at, E * 11, { gain: 0.06, attack: 0.5, bus });
   }
 }
 
@@ -331,7 +401,7 @@ function startMusic() {
   setInterval(() => {
     while (nextTime < ctx.currentTime + 1.5) {
       scheduleStep(nextStep, nextTime);
-      nextTime += EIGHTH;
+      nextTime += song.eighth;
       nextStep = (nextStep + 1) % LOOP_STEPS;
       if (nextStep === 0) loop++;
     }

@@ -88,6 +88,32 @@ html, body {
 }
 .go:active, .tile:active { transform: translateY(2px); }
 
+.go.wood { background: #b07a45; }
+.go.quiet { background: #fff; color: var(--ink); text-shadow: none; font-size: 18px; padding: 8px 16px; }
+
+/* The title screen: the name over the sea, the ship sailing lazy circles behind. */
+#title {
+  position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  color: #fff; text-shadow: 0 3px 0 var(--ink); text-align: center; padding: 20px;
+  background: radial-gradient(ellipse at center, rgba(20, 59, 69, .35), transparent 70%);
+}
+#title.on { display: flex; }
+#title h1 {
+  margin: 0; font-weight: normal; font-size: min(96px, 18vw); line-height: 1; color: var(--gold);
+  -webkit-text-stroke: 3px var(--ink); text-shadow: 0 6px 0 var(--ink); animation: bob 3s ease-in-out infinite;
+}
+@keyframes bob { 50% { transform: translateY(-6px) rotate(-1deg); } }
+#title p { margin: 0 0 10px; font-size: 20px; }
+#title .chest { margin: 12px 0 0; display: flex; align-items: center; gap: 8px; }
+#title .chest b { font-weight: normal; color: var(--gold); }
+body.home .fire, body.home #hud, body.home #hint, body.home #zone { display: none; }
+@media (max-height: 420px) { #title h1 { font-size: 72px; } #title p { margin-bottom: 6px; } }
+
+/* Shipyard levels: five dots under each upgrade. */
+.dots { display: flex; gap: 4px; margin: 2px 0; }
+.dots s { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--ink); background: #e6dccb; }
+.dots s.on { background: #5bd16a; }
+
 /* Gear and port choices: a row of big tappable tiles. */
 .tiles { display: flex; gap: 10px; justify-content: center; margin-bottom: 14px; }
 .tile {
@@ -129,6 +155,24 @@ html, body {
 #gear { display: flex; gap: 5px; }
 #gear i { width: 30px; height: 30px; border-radius: 9px; background: var(--gold); border: 3px solid var(--ink); padding: 2px; display: block; }
 #gear svg { width: 100%; height: 100%; fill: none; stroke: var(--ink); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; display: block; }
+
+/* The Kraken's health at the top, with a dot for each tentacle still fighting this round. */
+#boss {
+  position: fixed; top: calc(62px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); width: min(340px, 50vw);
+  display: none; flex-direction: column; align-items: center; gap: 4px; color: #fff; font-size: 20px; text-shadow: 0 2px 0 var(--ink); pointer-events: none;
+}
+#boss.on { display: flex; }
+#boss b { font-weight: normal; }
+#boss .bar { width: 100%; height: 18px; border-radius: 9px; border: 4px solid var(--ink); background: #2c4a52; overflow: hidden; }
+#boss .bar i { display: block; height: 100%; width: 100%; background: #b06ad8; transition: width .2s; }
+#boss .pips { display: flex; gap: 6px; }
+#boss .pips span { width: 14px; height: 14px; border-radius: 50%; background: #b06ad8; border: 3px solid var(--ink); }
+#boss .pips span.out { background: #2c4a52; }
+
+/* Kraken ink: dark blots that cover part of the screen for a few seconds. */
+#ink { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity 1.2s; }
+#ink.on { opacity: 1; transition: opacity .15s; }
+#ink span { position: absolute; width: 30vmax; height: 30vmax; border-radius: 50%; background: radial-gradient(circle, #1a1030 0 45%, rgba(26, 16, 48, .85) 60%, transparent 70%); transform: translate(-50%, -50%); }
 
 /* Arrows at the screen edge pointing at chests you can't see yet. */
 #marks { position: fixed; inset: 0; pointer-events: none; }

@@ -7,11 +7,16 @@ export function createBattle(enemies, loot, show) {
   let waves, wave, queue, timer, state = 'over', cove;
 
   // waves: lists of enemy kinds. Or for a cove: waves = [] and cove = { chests, ambush (a wave, or null) }.
+  // Or for Skull Rock: waves = 'kraken'.
   function start(w, c = null) {
     waves = w;
     cove = c;
     wave = -1;
-    if (cove) {
+    if (waves === 'kraken') {
+      state = 'boss';
+      enemies.summonKraken();
+      show.banner('The Kraken!', 'Shoot its tentacles, then its head');
+    } else if (cove) {
       state = 'cove';
       timer = 0;
       show.banner('Treasure cove', `Find all ${cove.chests} chests`);
@@ -64,6 +69,8 @@ export function createBattle(enemies, loot, show) {
       } else if (left === 0) {
         win('Cove cleared!', 'Gathering the gold…');
       }
+    } else if (state === 'boss' && enemies.krakenBeaten()) {
+      win('Kraken defeated!', 'Gathering the gold…');
     } else if (state === 'won' && timer <= 0) {
       state = 'over';
       show.end(true);

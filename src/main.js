@@ -11,8 +11,9 @@ import { createLoot } from './loot.js';
 import { createBattle } from './battle.js';
 import { createRoute, battleWaves, ambushWave, STOPS } from './voyage.js';
 import { GEAR, gearChoices } from './gear.js';
-import { showChart, hideChart, showPanel, hidePanel, gearTile, showGear } from './screens.js';
-import { unlockAudio, audioSetting, toggleAudio, sfx, seaSpeed } from './audio.js';
+import { showChart, hideChart, showPanel, hidePanel, gearTile, showGear, showTitle, hideTitle } from './screens.js';
+import { save, store, UPGRADES, MAX_LEVEL, upgradeCost, upgradedStats, shotDamage, startGold } from './save.js';
+import { unlockAudio, audioSetting, toggleAudio, sfx, seaSpeed, setMusic } from './audio.js';
 
 const PLAYER_SHOT = 5; // damage per cannonball: a pirate (30) takes about 3 good broadsides
 const PIRATE_SHOT = 6; // we (100) can take about 8
@@ -32,6 +33,8 @@ const enemies = createEnemies(stage.scene, world, fx, loot, {
     sfx.cannon(shots.length, Math.max(0.3, 0.9 - dist / 25));
   },
   hurtPlayer,
+  shake: (amount) => { shake = Math.max(shake, amount); },
+  ink: splatInk,
 }, gear);
 const battle = createBattle(enemies, loot, { banner, end: endStop });
 
@@ -39,9 +42,9 @@ const $ = (id) => document.getElementById(id);
 const fireButtons = { left: $('fireL'), right: $('fireR') };
 const wasReady = { left: true, right: true };
 
-// The voyage: the route, which stop was picked at each step, gold carried and gold safe at home.
-let route, path, gold = 0, bank = 0, stopGold = 0, stop = null;
-let mode = 'chart'; // 'chart' | 'sea' | 'panel'
+// The voyage: the route, which stop was picked at each step, and the gold carried (save.bank is safe at home).
+let route, path, gold = 0, stopGold = 0, stop = null;
+let mode = 'title'; // 'title' | 'chart' | 'sea' | 'panel'
 
 input.onFire = (side) => {
   if (mode !== 'sea') return;
@@ -49,7 +52,8 @@ input.onFire = (side) => {
   if (!shots) return;
   // Double shot: each cannon fires two balls, spread a little.
   const balls = gear.has('double') ? shots.flatMap((c) => [-0.07, 0.07].map((a) => turn(c, a))) : shots;
-  balls.forEach((c) => fx.shoot(c.x, c.z, c.dx, c.dz, (x, y, z) => enemies.hitAt(x, y, z, PLAYER_SHOT)));
+  const damage = shotDamage(PLAYER_SHOT); // heavier with shipyard upgrades
+  balls.forEach((c) => fx.shoot(c.x, c.z, c.dx, c.dz, (x, y, z) => enemies.hitAt(x, y, z, damage)));
   sfx.cannon(shots.length);
 };
 const turn = (c, a) => ({ ...c, dx: c.dx * Math.cos(a) - c.dz * Math.sin(a), dz: c.dx * Math.sin(a) + c.dz * Math.cos(a) });
@@ -85,34 +89,113 @@ function banner(text, small = '') {
   banner.timer = setTimeout(() => $('banner').classList.remove('on'), 2400);
 }
 
+// Kraken ink: two dark blots land somewhere on the screen, then fade after a few seconds.
+function splatInk() {
+  [...$('ink').children].forEach((blot, i) => {
+    blot.style.left = 15 + Math.random() * 70 + '%';
+    blot.style.top = 15 + Math.random() * 70 + '%';
+  });
+  $('ink').classList.add('on');
+  clearTimeout(splatInk.timer);
+  splatInk.timer = setTimeout(() => $('ink').classList.remove('on'), 3500);
+}
+
 function setGold(value) {
   gold = value;
   $('gold').lastChild.textContent = gold;
 }
 
+// ---------- home: the title screen, the shipyard and how to play ----------
+
+// Back home: nothing at sea, the ship sailing lazy circles behind the title.
+function showHome() {
+  mode = 'title';
+  hidePanel();
+  hideChart();
+  clearSea();
+  ship.reset(0, 0);
+  showTitle(save, {
+    sail: () => { sfx.click(); hideTitle(); newVoyage(); },
+    shipyard: () => { sfx.click(); hideTitle(); openShipyard(); },
+    help: () => { sfx.click(); hideTitle(); showHelp(showHome); },
+  });
+}
+
+// Spend the home chest on upgrades that last for every voyage.
+function openShipyard() {
+  mode = 'panel';
+  showPanel({
+    title: 'Shipyard',
+    text: `Home chest: <b>${save.bank}</b> gold. Upgrades last for every voyage.`,
+    tiles: Object.entries(UPGRADES).map(([id, u]) => {
+      const cost = upgradeCost(id), top = save.levels[id] >= MAX_LEVEL;
+      return {
+        icon: `<svg viewBox="0 0 24 24">${u.icon}</svg>`, name: u.name, text: u.text, level: save.levels[id],
+        price: top ? 'Fully upgraded' : `${cost} gold`, disabled: top || save.bank < cost,
+        onClick: () => {
+          save.bank -= cost;
+          save.levels[id]++;
+          store();
+          sfx.buy();
+          openShipyard();
+        },
+      };
+    }),
+    buttons: [{ label: 'Back', onClick: () => { sfx.click(); showHome(); } }],
+  });
+}
+
+// The first voyage starts with this; it's also on the title screen.
+function showHelp(then) {
+  mode = 'panel';
+  const icon = (path) => `<svg viewBox="0 0 24 24">${path}</svg>`;
+  showPanel({
+    title: 'How to play',
+    text: 'Sail from stop to stop and beat the Kraken at Skull Rock.',
+    tiles: [
+      { icon: icon('<circle cx="12" cy="12" r="9"/><circle cx="15" cy="9" r="3"/>'), name: 'Steer',
+        text: matchMedia('(pointer: coarse)').matches ? 'Touch the left side and drag' : 'WASD or the arrow keys' },
+      { icon: icon('<path d="M3 11l14-5 2 6-14 4z"/><circle cx="8" cy="17" r="3"/>'), name: 'Fire',
+        text: 'Fire Left and Fire Right shoot out of each side (Q and E)' },
+      { icon: icon('<path d="M4 12h16M7 8l-4 4 4 4M17 8l4 4-4 4"/>'), name: 'Turn side-on',
+        text: 'Line an enemy up beside you, then fire' },
+      { icon: icon('<rect x="4" y="10" width="16" height="10" rx="1.5"/><path d="M4 10a8 5 0 0 1 16 0M12 13v3"/>'), name: 'Grab the gold',
+        text: 'Spend it in port, or bring it home for the shipyard' },
+    ],
+    buttons: [{ label: 'Got it', onClick: () => { sfx.click(); save.seenHelp = true; store(); then(); } }],
+  });
+}
+
+function clearSea() {
+  enemies.clear();
+  loot.clear();
+  fx.clear();
+  $('ink').classList.remove('on');
+  setMusic('calm');
+}
+
 // ---------- the voyage ----------
 
-// A fresh voyage: new route, full hull, no gear, no gold carried.
+// A fresh voyage: new route, full hull (with shipyard upgrades), no gear, the purse's starting gold.
 function newVoyage() {
   route = createRoute();
   path = [];
   gear.clear();
   showGear(gear);
   ship.resetGear();
-  Object.assign(ship.stats, PLAYER_STATS);
+  Object.assign(ship.stats, upgradedStats(PLAYER_STATS));
   loot.setMagnet(4);
   ship.reset(0, 0);
-  setGold(0);
-  openChart();
+  setGold(startGold());
+  if (save.seenHelp) openChart();
+  else showHelp(openChart);
 }
 
 function openChart() {
   mode = 'chart';
   hidePanel();
-  enemies.clear(); // nothing left sailing about behind the chart
-  loot.clear();
-  fx.clear();
-  showChart(route, path, { bank }, (s, i) => {
+  clearSea(); // nothing left sailing about behind the chart
+  showChart(route, path, { bank: save.bank }, (s, i) => {
     sfx.click();
     path.push(i);
     hideChart();
@@ -129,19 +212,20 @@ function startStop(type, step) {
   enemies.clear();
   loot.clear();
   fx.clear();
-  world.build(Math.floor(Math.random() * 1e6), type === 'treasure');
+  world.build(Math.floor(Math.random() * 1e6), type === 'treasure' ? 'cove' : type === 'final' ? 'boss' : 'battle');
   const hp = p.hp;
-  ship.reset(0, 0);
+  if (type === 'final') ship.reset(10, 10, -Math.PI * 0.75); // at the edge, the Kraken's lair in front
+  else ship.reset(0, 0);
   p.hp = hp;
-  focus.set(0, 0, 0);
+  focus.set(p.x, 0, p.z);
   stopGold = 0;
+  setMusic(type === 'final' ? 'boss' : 'calm');
   if (type === 'treasure') {
     const spots = world.openSpots(4 + Math.floor(Math.random() * 3));
     spots.forEach((s) => loot.chest(s.x, s.z, 4 + Math.floor(step / 2))); // 20 to 35 gold a chest
     battle.start([], { chests: spots.length, ambush: ambushWave(step) });
   } else {
-    if (type === 'final') banner('Skull Rock', 'The last fight of the voyage');
-    battle.start(battleWaves(step));
+    battle.start(type === 'final' ? 'kraken' : battleWaves(step));
   }
 }
 
@@ -149,21 +233,16 @@ function startStop(type, step) {
 function endStop(won) {
   mode = 'panel';
   $('banner').classList.remove('on');
-  if (!won) {
-    const kept = Math.floor(gold / 2);
-    bank += kept;
-    showPanel({
-      title: 'Sunk!', tone: 'lost',
-      text: `Your voyage ends at stop ${path.length} of ${STOPS}.<br>You bring home half your gold: <b>${kept}</b>.`,
-      buttons: [{ label: 'New voyage', onClick: () => { sfx.click(); newVoyage(); } }],
-    });
-  } else if (stop.type === 'final') {
-    bank += gold;
-    showPanel({
-      title: 'Voyage complete!',
-      text: `You beat Skull Rock and bring home <b>${gold}</b> gold.`,
-      buttons: [{ label: 'New voyage', onClick: () => { sfx.click(); newVoyage(); } }],
-    });
+  const home = [{ label: 'Home port', onClick: () => { sfx.click(); showHome(); } }];
+  if (!won || stop.type === 'final') { // the voyage is over: bank the gold and save
+    const kept = won ? gold : Math.floor(gold / 2);
+    save.bank += kept;
+    save.voyages++;
+    if (won) save.krakens++;
+    store();
+    showPanel(won
+      ? { title: 'Voyage complete!', text: `You beat the Kraken and bring home <b>${kept}</b> gold.`, buttons: home }
+      : { title: 'Sunk!', tone: 'lost', text: `Your voyage ends at stop ${path.length} of ${STOPS}.<br>You bring home half your gold: <b>${kept}</b>.`, buttons: home });
   } else if (stop.type === 'battle' && gearChoices(gear, 3).length) {
     showPanel({
       title: 'Victory!',
@@ -197,9 +276,9 @@ function openPort(step) {
       title: 'Port',
       text: `Hull <b>${Math.ceil(p.hp)} / ${p.maxHp}</b> · Gold <b>${gold}</b>`,
       tiles: [
-        { icon: REPAIR_ICON, name: 'Patch the hull', text: `+${PORT.patch} hull`, price: PORT.patchCost,
+        { icon: REPAIR_ICON, name: 'Patch the hull', text: `+${PORT.patch} hull`, price: `${PORT.patchCost} gold`,
           disabled: !missing || gold < PORT.patchCost, onClick: buy(PORT.patchCost, () => repair(PORT.patch)) },
-        { icon: REPAIR_ICON, name: 'Full repair', text: `+${missing} hull`, price: full,
+        { icon: REPAIR_ICON, name: 'Full repair', text: `+${missing} hull`, price: `${full} gold`,
           disabled: !missing || gold < full, onClick: buy(full, () => repair(missing)) },
         ...forSale.map((id) => gearTile(id, { price, disabled: gold < price || gear.has(id),
           onClick: buy(price, () => takeGear(id)) })),
@@ -249,7 +328,8 @@ function frame(dt) {
   const mag = mode === 'sea' ? Math.hypot(input.x, input.y) : 0;
   // Thumbstick on the screen -> heading in the world (the camera looks along (1,1,1)).
   const want = mag > 0.12 ? Math.atan2(-input.x - input.y, input.x - input.y) : null;
-  ship.update(dt, time, want, Math.min(1, mag * 1.3));
+  if (mode === 'title') ship.update(dt, time, p.heading + dt * 0.25, 0.4); // lazy wide circles behind the title
+  else ship.update(dt, time, want, Math.min(1, mag * 1.3));
   world.update(time);
   const hit = world.collide(p);
   if (hit > 1) { // bump: splash, knock and a little camera shake
@@ -290,7 +370,7 @@ function frame(dt) {
 }
 
 world.build(1);
-newVoyage();
+showHome();
 let last = performance.now();
 stage.renderer.setAnimationLoop((now) => {
   frame(Math.min(0.05, (now - last) / 1000));
@@ -299,6 +379,6 @@ stage.renderer.setAnimationLoop((now) => {
 
 // Lets the browser console inspect the game while developing.
 if (import.meta.env.DEV) {
-  window.game = { stage, ship, world, enemies, battle, loot, fx, gear, frame, takeGear, startStop, openPort, newVoyage,
+  window.game = { stage, ship, world, enemies, battle, loot, fx, gear, save, frame, takeGear, startStop, openPort, newVoyage, showHome, openShipyard,
     get route() { return route; }, get path() { return path; }, get mode() { return mode; } };
 }

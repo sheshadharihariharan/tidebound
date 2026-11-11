@@ -85,8 +85,9 @@ export function createWorld(scene) {
     hits.push({ x, z, r: R * 0.95, top: 1, kind: 'island' });
   }
 
-  // cove: a treasure cove, with more islands and rocks to weave between.
-  function build(seed, cove = false) {
+  // kind: 'battle'; 'cove' (more islands and rocks to weave between); 'boss' (wide open water in the middle).
+  function build(seed, kind = 'battle') {
+    const cove = kind === 'cove', inner = kind === 'boss' ? 17 : CLEAR + 4;
     scene.remove(group);
     group = new THREE.Group();
     hits = [];
@@ -101,9 +102,9 @@ export function createWorld(scene) {
     }
     // Inside: rock clusters or islands, spread out, leaving the middle open.
     const spots = [];
-    const want = cove ? 7 + Math.floor(rnd() * 3) : 4 + Math.floor(rnd() * 3), apart = cove ? 8 : 10;
+    const want = cove ? 7 + Math.floor(rnd() * 3) : kind === 'boss' ? 3 : 4 + Math.floor(rnd() * 3), apart = cove ? 8 : 10;
     for (let tries = 0; tries < 80 && spots.length < want; tries++) {
-      const a = rnd() * 6.28, d = CLEAR + 4 + rnd() * (ARENA - CLEAR - 10);
+      const a = rnd() * 6.28, d = inner + rnd() * (ARENA - 6 - inner);
       const x = Math.cos(a) * d, z = Math.sin(a) * d;
       if (spots.some((s) => Math.hypot(s.x - x, s.z - z) < apart)) continue;
       spots.push({ x, z });

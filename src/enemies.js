@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { createShip, wrap } from './ship.js';
 import { createTurtle, createShark, createMines } from './creatures.js';
+import { createKraken } from './kraken.js';
 import { SHELL_RADIUS } from './effects.js';
 import { ARENA } from './world.js';
 import { sfx } from './audio.js';
@@ -34,8 +35,10 @@ const RAM = 12; // damage when you sail into an enemy with ram spikes
 // world: rocks. fx: effects. loot: gold. gear: the player's gear ids (a Set).
 // api.shoot(shots, dist): a sloop fires cannonballs at the player.
 // api.hurtPlayer(amount, x, y, z): something other than a cannonball hit the player.
+// api.ink(), api.shake(amount): the Kraken's ink on the screen, and a camera shake.
 export function createEnemies(scene, world, fx, loot, api, gear) {
   const list = [];
+  let kraken = null; // the boss, while it's being fought
   const bars = document.getElementById('bars');
   const mines = createMines(scene, fx, (x, z) => {
     if (Math.hypot(player.x - x, player.z - z) < BLAST) api.hurtPlayer(DAMAGE.mine, player.x, 1, player.z);
@@ -253,6 +256,7 @@ export function createEnemies(scene, world, fx, loot, api, gear) {
       world.collide(s, e.kind === 'turtle' ? 1.3 : 1);
     }
     mines.update(dt, t, p);
+    kraken?.update(dt, t, p);
     separate(p);
 
     // Health bars float above enemies that have been hit.
@@ -291,6 +295,7 @@ export function createEnemies(scene, world, fx, loot, api, gear) {
 
   // A player's cannonball at (x, y, z): damage the enemy or set off the mine it touches. Returns true on a hit.
   function hitAt(x, y, z, amount) {
+    if (kraken?.hitAt(x, y, z, amount)) return true;
     const e = list.find((e) => e.body.touches(x, y, z));
     if (e) {
       if (gear.has('chain')) e.slow = SLOW;
@@ -303,10 +308,14 @@ export function createEnemies(scene, world, fx, loot, api, gear) {
   function clear() {
     [...list].forEach(drop);
     mines.clear();
+    kraken?.remove();
+    kraken = null;
   }
 
   // Enemies still afloat (sinking ones don't count).
   const alive = () => list.filter((e) => e.body.state.sinking < 0).length;
+  const summonKraken = () => { kraken = createKraken(scene, fx, loot, api); };
+  const krakenBeaten = () => !!kraken?.beaten();
 
-  return { spawn, update, hitAt, clear, disarm: mines.clear, alive, list };
+  return { spawn, update, hitAt, clear, disarm: mines.clear, alive, summonKraken, krakenBeaten, list };
 }

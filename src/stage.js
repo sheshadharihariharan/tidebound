@@ -35,6 +35,13 @@ export function createStage(container) {
   sun.position.set(-8, 14, 6);
   scene.add(sun);
 
+  // The sea surface: the same colour as the background, so it can't be seen, but it hides
+  // whatever is under the water (a sinking hull, a diving shark, a tentacle about to burst up).
+  const seaMat = new THREE.MeshBasicMaterial({ color: SEA });
+  seaMat.userData.outlineParameters = { visible: false };
+  const surface = new THREE.Mesh(new THREE.PlaneGeometry(400, 400).rotateX(-Math.PI / 2), seaMat);
+  scene.add(surface);
+
   const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
   function resize() {
     const w = innerWidth, h = innerHeight;
@@ -52,6 +59,7 @@ export function createStage(container) {
   const look = (focus) => {
     camera.position.set(focus.x + 30, focus.y + 30, focus.z + 30);
     camera.lookAt(focus);
+    surface.position.set(focus.x, 0, focus.z);
   };
   return { scene, camera, look, render: () => outline.render(scene, camera), renderer };
 }

@@ -50,7 +50,8 @@ export const hideChart = () => $('chart').classList.remove('on');
 
 // ---------- the card panel ----------
 
-// title, text (may hold <b>), tiles: [{ icon, name, text, price, disabled, onClick }], buttons: [{ label, onClick }].
+// title, text (may hold <b>), buttons: [{ label, onClick, quiet }],
+// tiles: [{ icon, name, text, price, level (shows dots out of 5), disabled, onClick }].
 export function showPanel({ title, text = '', tiles = [], buttons = [], tone = '' }) {
   const panel = $('panel');
   panel.className = tone + (panel.classList.contains('on') ? ' on' : ''); // redraw in place, no flicker
@@ -60,13 +61,14 @@ export function showPanel({ title, text = '', tiles = [], buttons = [], tone = '
     const b = document.createElement('button');
     b.className = 'tile';
     b.disabled = !!t.disabled;
-    b.innerHTML = `${t.icon}<b>${t.name}</b><span>${t.text}</span>${t.price != null ? `<em>${t.price} gold</em>` : ''}`;
+    const dots = t.level != null ? `<i class="dots">${'<s class="on"></s>'.repeat(t.level)}${'<s></s>'.repeat(5 - t.level)}</i>` : '';
+    b.innerHTML = `${t.icon}<b>${t.name}</b><span>${t.text}</span>${dots}${t.price != null ? `<em>${t.price}</em>` : ''}`;
     b.onclick = t.onClick;
     panel.querySelector('.tiles').append(b);
   }
   for (const [i, btn] of buttons.entries()) {
     const b = document.createElement('button');
-    b.className = 'go';
+    b.className = btn.quiet ? 'go quiet' : 'go';
     b.textContent = btn.label;
     b.onclick = btn.onClick;
     panel.querySelector('.buttons').append(b);
@@ -77,8 +79,33 @@ export function showPanel({ title, text = '', tiles = [], buttons = [], tone = '
 
 export const hidePanel = () => $('panel').classList.remove('on');
 
-// A gear piece as a tile.
-export const gearTile = (id, extra) => ({ icon: gearIcon(id), name: GEAR[id].name, text: GEAR[id].text, ...extra });
+// A gear piece as a tile. price: a number of gold, shown as "N gold".
+export const gearTile = (id, { price, ...extra } = {}) =>
+  ({ icon: gearIcon(id), name: GEAR[id].name, text: GEAR[id].text, price: price != null ? `${price} gold` : null, ...extra });
+
+// ---------- the title screen ----------
+
+// info: { bank, voyages, krakens }. on: { sail, shipyard, help }.
+export function showTitle(info, on) {
+  const stats = info.voyages ? `Voyages: ${info.voyages} · Krakens beaten: ${info.krakens}` : 'A cosy voyage of cannons, coves and one very big squid';
+  $('title').innerHTML = `
+    <h1>Tidebound</h1>
+    <p>${stats}</p>
+    <div class="buttons">
+      <button class="go" data-on="sail">Set sail</button>
+      <button class="go wood" data-on="shipyard">Shipyard</button>
+      <button class="go quiet" data-on="help">How to play</button>
+    </div>
+    <p class="chest"><span class="coin"></span> Home chest: <b>${info.bank}</b> gold</p>`;
+  $('title').querySelectorAll('[data-on]').forEach((b) => b.addEventListener('click', on[b.dataset.on]));
+  $('title').classList.add('on');
+  document.body.classList.add('home');
+}
+
+export function hideTitle() {
+  $('title').classList.remove('on');
+  document.body.classList.remove('home');
+}
 
 // Little gear icons next to the gold.
 export function showGear(owned) {
