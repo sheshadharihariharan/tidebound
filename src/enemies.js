@@ -5,8 +5,9 @@
 //   shark:   circles under the water, comes up to charge, then is tired for a moment.
 import * as THREE from 'three';
 import { createShip, wrap } from './ship.js';
-import { createTurtle, createShark, createMines } from './creatures.js';
+import { createTurtle, createShark, createMines, createJelly, createPuffer, PUFF_REACH } from './creatures.js';
 import { createKraken } from './kraken.js';
+import { createCrab } from './crab.js';
 import { SHELL_RADIUS } from './effects.js';
 import { ARENA } from './world.js';
 import { sfx } from './audio.js';
@@ -27,6 +28,11 @@ const SHARK = { aim: 1.5, charge: 1.2, restBite: 3.5, restMiss: 3.2 };
 const BLAST = 2.8; // a mine hurts everything this close
 const CRATE_CHANCE = 0.35; // a sunk enemy leaves a repair crate this often
 
+const STING = { damage: 5, slow: 1.5, reach: 1.5, every: 2 }; // a jellyfish: damage, seconds it slows you, how close, how often
+const PUFF = { near: 4.5, swell: 1, damage: 10, rest: 2.5 }; // a pufferfish: puffs up when this close, for this long
+const SAND_DRAG = 0.45; // ships on a sandbar only get this much of their speed
+export const BOSSES = { kraken: createKraken, crab: createCrab };
+
 // Gear effects on enemies.
 const SLOW = 3; // seconds a chain shot slows an enemy, to half speed
 const BURN = { time: 3, perSecond: 2 }; // a fire shot's burn
@@ -36,9 +42,10 @@ const RAM = 12; // damage when you sail into an enemy with ram spikes
 // api.shoot(shots, dist): a sloop fires cannonballs at the player.
 // api.hurtPlayer(amount, x, y, z): something other than a cannonball hit the player.
 // api.ink(), api.shake(amount): the Kraken's ink on the screen, and a camera shake.
+// api.slowPlayer(seconds): a jellyfish sting.
 export function createEnemies(scene, world, fx, loot, api, gear) {
   const list = [];
-  let kraken = null; // the boss, while it's being fought
+  let boss = null; // the Kraken or the Crab King, while it's being fought
   const bars = document.getElementById('bars');
   const mines = createMines(scene, fx, (x, z) => {
     if (Math.hypot(player.x - x, player.z - z) < BLAST) api.hurtPlayer(DAMAGE.mine, player.x, 1, player.z);
@@ -54,6 +61,8 @@ export function createEnemies(scene, world, fx, loot, api, gear) {
     gunboat: { gold: 6, barY: 3.3, hitColor: 0x8a5a33, make: makeGunboat, think: gunboat },
     turtle: { gold: 7, barY: 2.4, hitColor: 0x5c7a35, make: () => createTurtle(scene), think: turtle },
     shark: { gold: 4, barY: 1.9, hitColor: 0x6d8796, make: () => createShark(scene), think: shark },
+    jelly: { gold: 1, barY: 1.6, hitColor: 0xff8fc8, make: () => createJelly(scene), think: jelly },
+    puffer: { gold: 3, barY: 2.2, hitColor: 0xf2c14e, make: () => createPuffer(scene), think: puffer },
   };
 
   function makeGunboat() {
@@ -66,23 +75,29 @@ export function createEnemies(scene, world, fx, loot, api, gear) {
   }
 
   // A new enemy somewhere along the edge of the arena, away from the player.
+  // 'jellies' is a swarm of four jellyfish.
   function spawn(kind, p) {
     for (let tries = 0; tries < 40; tries++) {
       const a = Math.random() * Math.PI * 2, d = 17 + Math.random() * 5;
       const x = Math.cos(a) * d, z = Math.sin(a) * d;
       const far = Math.hypot(p.x - x, p.z - z) > (tries < 30 ? 14 : 8);
       if (!far || !world.clearAt(x, z, 2.5) || list.some((e) => Math.hypot(e.body.state.x - x, e.body.state.z - z) < 6)) continue;
-      const body = KINDS[kind].make();
-      body.reset(x, z, Math.atan2(-z, -x)); // facing the middle
-      if (kind === 'shark') body.state.under = true;
-      const bar = document.createElement('div');
-      bar.className = 'ebar';
-      bar.innerHTML = '<i></i>';
-      bars.append(bar);
-      list.push({ kind, body, bar, roam: Math.random() < 0.5 ? 1 : -1, roamTimer: 3, aim: 0.4, timer: 2 + Math.random() * 2, mode: 'circle', slow: 0, burn: 0, rammed: 0 });
+      if (kind === 'jellies') [0, 1, 2, 3].forEach((i) => place('jelly', x + Math.cos(i * 1.57) * 1.8, z + Math.sin(i * 1.57) * 1.8));
+      else place(kind, x, z);
       fx.splash(x, z, 1.4);
       return;
     }
+  }
+
+  function place(kind, x, z) {
+    const body = KINDS[kind].make();
+    body.reset(x, z, Math.atan2(-z, -x)); // facing the middle
+    if (kind === 'shark') body.state.under = true;
+    const bar = document.createElement('div');
+    bar.className = 'ebar';
+    bar.innerHTML = '<i></i>';
+    bars.append(bar);
+    list.push({ kind, body, bar, roam: Math.random() < 0.5 ? 1 : -1, roamTimer: 3, aim: 0.4, timer: 2 + Math.random() * 2, mode: 'circle', slow: 0, burn: 0, rammed: 0 });
   }
 
   function drop(e) {
@@ -102,7 +117,8 @@ export function createEnemies(scene, world, fx, loot, api, gear) {
       sfx.crack();
     }
     if (e.body.hurt(amount)) {
-      sfx.sink();
+      if (e.kind === 'jelly') sfx.plop();
+      else sfx.sink();
       const g = KINDS[e.kind].gold;
       loot.drop(s.x, s.z, g - 1 + Math.floor(Math.random() * 3));
       // A repair crate: sometimes, and always from the last enemy left afloat.
@@ -228,6 +244,48 @@ export function createEnemies(scene, world, fx, loot, api, gear) {
     return [s.heading + 0.3 * e.roam, 0.1];
   }
 
+  // Drifts toward you, wobbling; stings and slows you if you sail through it.
+  function jelly(e, dt, p, dist, toP) {
+    e.timer -= dt;
+    if (dist < STING.reach && e.timer <= 0 && p.sinking < 0) {
+      e.timer = STING.every;
+      api.hurtPlayer(STING.damage, p.x, 1, p.z);
+      api.slowPlayer(STING.slow);
+      sfx.zap();
+      const s = e.body.state; // bounces back off the hull
+      s.vx -= Math.cos(toP) * 3;
+      s.vz -= Math.sin(toP) * 3;
+    }
+    return [toP + Math.sin(e.roamTimer += dt) * 0.8, 0.8];
+  }
+
+  // Swims at you; close up it puffs into a spiky ball, then bursts its spikes out. Then it rests.
+  function puffer(e, dt, p, dist, toP) {
+    const b = e.body;
+    e.timer -= dt;
+    if (e.mode === 'circle') { // swimming at you
+      b.puff = 0;
+      if (dist < PUFF.near && p.sinking < 0) { e.mode = 'swell'; e.timer = PUFF.swell; sfx.inflate(); }
+      return [toP, 1];
+    }
+    if (e.mode === 'swell') {
+      b.puff = 1;
+      if (e.timer <= 0) {
+        const s = b.state;
+        fx.shipHit(s.x, 1, s.z, 0xc98a2c);
+        fx.splash(s.x, s.z, 1.6);
+        sfx.spikes();
+        if (p.sinking < 0 && Math.hypot(p.x - s.x, p.z - s.z) < PUFF_REACH + 0.6) api.hurtPlayer(PUFF.damage, p.x, 1, p.z);
+        e.mode = 'rest';
+        e.timer = PUFF.rest;
+      }
+      return [toP, 0];
+    }
+    b.puff = 0; // resting: drifts away a little
+    if (e.timer <= 0) e.mode = 'circle';
+    return [toP + Math.PI, 0.3];
+  }
+
   // p: the player's ship state.
   function update(dt, t, p, camera) {
     player = p;
@@ -244,6 +302,7 @@ export function createEnemies(scene, world, fx, loot, api, gear) {
       // Gear effects: slowed by chain shot, burning from fire shot.
       e.rammed -= dt;
       if (e.slow > 0) { e.slow -= dt; throttle *= 0.5; }
+      if (e.kind !== 'jelly' && world.sandAt(s.x, s.z)) throttle *= SAND_DRAG;
       if (e.burn > 0) {
         e.burn -= dt;
         if (Math.random() < dt * 6) fx.puff(s.x + (Math.random() - 0.5) * 1.5, 1, s.z + (Math.random() - 0.5) * 1.5, 0.7, 0xff9a3c);
@@ -256,7 +315,7 @@ export function createEnemies(scene, world, fx, loot, api, gear) {
       world.collide(s, e.kind === 'turtle' ? 1.3 : 1);
     }
     mines.update(dt, t, p);
-    kraken?.update(dt, t, p);
+    boss?.update(dt, t, p);
     separate(p);
 
     // Health bars float above enemies that have been hit.
@@ -274,7 +333,7 @@ export function createEnemies(scene, world, fx, loot, api, gear) {
   // Ships and creatures push each other apart instead of overlapping.
   // With ram spikes, sailing hard into an enemy hurts it.
   function separate(p) {
-    const all = [p, ...list.filter((e) => e.body.state.sinking < 0)];
+    const all = [p, ...list.filter((e) => e.body.state.sinking < 0 && e.kind !== 'jelly')]; // jellyfish are soft: you sail through
     const state = (a) => (a === p ? p : a.body.state);
     for (let i = 0; i < all.length; i++) {
       for (let j = i + 1; j < all.length; j++) {
@@ -295,12 +354,12 @@ export function createEnemies(scene, world, fx, loot, api, gear) {
 
   // A player's cannonball at (x, y, z): damage the enemy or set off the mine it touches. Returns true on a hit.
   function hitAt(x, y, z, amount) {
-    if (kraken?.hitAt(x, y, z, amount)) return true;
+    if (boss?.hitAt(x, y, z, amount)) return true;
     const e = list.find((e) => e.body.touches(x, y, z));
     if (e) {
       if (gear.has('chain')) e.slow = SLOW;
       if (gear.has('fire')) e.burn = BURN.time;
-      damage(e, amount, x, y, z);
+      damage(e, e.kind === 'puffer' && e.body.puff ? amount * 2 : amount, x, y, z); // a puffed-up pufferfish takes double
     }
     return !!e || mines.hitAt(x, y, z);
   }
@@ -308,14 +367,15 @@ export function createEnemies(scene, world, fx, loot, api, gear) {
   function clear() {
     [...list].forEach(drop);
     mines.clear();
-    kraken?.remove();
-    kraken = null;
+    boss?.remove();
+    boss = null;
   }
 
   // Enemies still afloat (sinking ones don't count).
   const alive = () => list.filter((e) => e.body.state.sinking < 0).length;
-  const summonKraken = () => { kraken = createKraken(scene, fx, loot, api); };
-  const krakenBeaten = () => !!kraken?.beaten();
+  // name: 'kraken' or 'crab'.
+  const summonBoss = (name) => { boss = BOSSES[name](scene, fx, loot, api); };
+  const bossBeaten = () => !!boss?.beaten();
 
-  return { spawn, update, hitAt, clear, disarm: mines.clear, alive, summonKraken, krakenBeaten, list };
+  return { spawn, update, hitAt, clear, disarm: mines.clear, alive, summonBoss, bossBeaten, list };
 }

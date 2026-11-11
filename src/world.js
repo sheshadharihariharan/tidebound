@@ -9,9 +9,14 @@ const SAND = new THREE.CylinderGeometry(0.9, 1, 0.6, 14);
 const GRASS = new THREE.CylinderGeometry(0.62, 0.72, 0.4, 12);
 const TRUNK = new THREE.CylinderGeometry(0.1, 0.17, 2.2, 6);
 const LEAF = new THREE.SphereGeometry(1, 6, 4);
-const rockMats = [0x8a8f99, 0x7b8089, 0x9a948b].map((c) => toon(c));
+const BRANCH = new THREE.CylinderGeometry(0.12, 0.2, 1, 6).translate(0, 0.5, 0);
+const BUD = new THREE.SphereGeometry(0.22, 8, 6);
+const SANDBAR = new THREE.CircleGeometry(1, 24).rotateX(-Math.PI / 2);
+const mats = new Map();
+const mat = (c) => mats.get(c) ?? mats.set(c, toon(c)).get(c);
+const CORAL = [0xff7a8a, 0xff9f5a, 0xc77dff, 0xffd166];
 const sandMat = toon(0xf2d49b), grassMat = toon(0x4fae55), trunkMat = toon(0x7a5230), leafMat = toon(0x2f9a4a);
-const foamMat = flat(0.55);
+const foamMat = flat(0.55), sandbarMat = flat(0.55, 0xf6e3b4), sandbarEdge = flat(0.35, 0xffffff);
 
 // Same seed, same rocks, every time.
 function seeded(i, j) {
@@ -52,11 +57,12 @@ export const ARENA = 28; // radius of the rock fence
 const CLEAR = 7; // open water kept around the middle
 
 export function createWorld(scene) {
-  let group = new THREE.Group(), hits = [], rings = [];
+  let group = new THREE.Group(), hits = [], rings = [], sandbars = [];
+  let theme = { rocks: [0x8a8f99, 0x7b8089, 0x9a948b], coral: false, sandbars: 0 };
   scene.add(group);
 
   function rock(x, z, r, rnd) {
-    const m = new THREE.Mesh(ROCK, rockMats[Math.floor(rnd() * 3)]);
+    const m = new THREE.Mesh(ROCK, mat(theme.rocks[Math.floor(rnd() * theme.rocks.length)]));
     m.scale.set(r, r * 0.8, r);
     m.position.set(x, r * 0.25, z);
     m.rotation.y = rnd() * 6;
@@ -65,6 +71,44 @@ export function createWorld(scene) {
     group.add(m, ring);
     rings.push({ ring, r: r * 1.05, phase: rnd() * 6 });
     hits.push({ x, z, r: r * 0.95, top: r * 1.05, kind: 'rock' });
+  }
+
+  // A coral head: a low mound with bright branches and buds. Solid like a rock.
+  function coral(x, z, r, rnd) {
+    const g = new THREE.Group();
+    const color = CORAL[Math.floor(rnd() * CORAL.length)];
+    const mound = new THREE.Mesh(ROCK, mat(color));
+    mound.scale.set(r, r * 0.45, r);
+    g.add(mound);
+    for (let n = 4 + Math.floor(rnd() * 3); n > 0; n--) {
+      const branch = new THREE.Mesh(BRANCH, mat(CORAL[Math.floor(rnd() * CORAL.length)]));
+      const a = rnd() * 6.28, d = rnd() * r * 0.5, h = 0.7 + rnd() * r * 0.6;
+      branch.position.set(Math.cos(a) * d, r * 0.2, Math.sin(a) * d);
+      branch.scale.set(1, h, 1);
+      branch.rotation.set((rnd() - 0.5) * 0.9, 0, (rnd() - 0.5) * 0.9);
+      const bud = new THREE.Mesh(BUD, branch.material);
+      bud.position.y = 1;
+      bud.scale.set(1, 1 / h, 1);
+      branch.add(bud);
+      g.add(branch);
+    }
+    g.position.set(x, 0, z);
+    const ring = new THREE.Mesh(RING, foamMat);
+    ring.position.set(x, 0.03, z);
+    group.add(g, ring);
+    rings.push({ ring, r: r * 1.05, phase: rnd() * 6 });
+    hits.push({ x, z, r: r * 0.95, top: r * 0.9 + 0.6, kind: 'rock' });
+  }
+
+  // A sandbar: pale shallow water that slows ships down. Not solid.
+  function sandbar(x, z, r) {
+    const m = new THREE.Mesh(SANDBAR, sandbarMat), edge = new THREE.Mesh(RING, sandbarEdge);
+    m.scale.setScalar(r);
+    m.position.set(x, 0.025, z);
+    edge.scale.setScalar(r / 1.2);
+    edge.position.set(x, 0.026, z);
+    group.add(m, edge);
+    sandbars.push({ x, z, r });
   }
 
   function island(x, z, R, rnd) {
@@ -86,12 +130,15 @@ export function createWorld(scene) {
   }
 
   // kind: 'battle'; 'cove' (more islands and rocks to weave between); 'boss' (wide open water in the middle).
-  function build(seed, kind = 'battle') {
+  // look: the voyage's theme { rocks: colours, coral: coral heads instead of inner rocks, sandbars: how many }.
+  function build(seed, kind = 'battle', look = theme) {
+    theme = look;
     const cove = kind === 'cove', inner = kind === 'boss' ? 17 : CLEAR + 4;
     scene.remove(group);
     group = new THREE.Group();
     hits = [];
     rings = [];
+    sandbars = [];
     scene.add(group);
     const rnd = seeded(seed, 1);
     // The fence: big rocks close enough together that no ship fits between them.
@@ -111,10 +158,20 @@ export function createWorld(scene) {
       if (rnd() < (cove ? 0.55 : 0.35)) {
         island(x, z, 2.6 + rnd() * 1.2, rnd);
       } else {
-        for (let k = 1 + Math.floor(rnd() * 3); k > 0; k--) rock(x + (rnd() - 0.5) * 4, z + (rnd() - 0.5) * 4, 0.9 + rnd() * 1.1, rnd);
+        const make = theme.coral ? coral : rock;
+        for (let k = 1 + Math.floor(rnd() * 3); k > 0; k--) make(x + (rnd() - 0.5) * 4, z + (rnd() - 0.5) * 4, 0.9 + rnd() * 1.1, rnd);
       }
     }
+    // Sandbars in open water, away from the middle and the rocks.
+    for (let tries = 0, n = kind === 'boss' ? 0 : theme.sandbars; tries < 60 && sandbars.length < n; tries++) {
+      const a = rnd() * 6.28, d = CLEAR + 3 + rnd() * (ARENA - CLEAR - 9), r = 2.5 + rnd() * 1.8;
+      const x = Math.cos(a) * d, z = Math.sin(a) * d;
+      if (clearAt(x, z, r) && sandbars.every((s) => Math.hypot(s.x - x, s.z - z) > s.r + r + 2)) sandbar(x, z, r);
+    }
   }
+
+  // Is (x, z) on a sandbar?
+  const sandAt = (x, z) => sandbars.some((s) => Math.hypot(x - s.x, z - s.z) < s.r);
 
   function update(t) {
     for (const f of rings) f.ring.scale.setScalar(f.r * (1 + 0.05 * Math.sin(t * 1.5 + f.phase)));
@@ -165,7 +222,7 @@ export function createWorld(scene) {
     for (const h of hits) if (Math.hypot(x - h.x, z - h.z) < h.r + margin) return false;
     return true;
   }
-  return { build, update, collide, solidAt, clearAt, openSpots, hits: () => hits };
+  return { build, update, collide, solidAt, clearAt, openSpots, sandAt, hits: () => hits };
 }
 
 // Light dashes that breathe in and out across the water, wrapping around the camera.

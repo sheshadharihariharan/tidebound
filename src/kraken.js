@@ -31,6 +31,7 @@ export function createKraken(scene, fx, loot, api) {
   const head = makeHead();
   let round = 0, next = 2, phase = 'tentacles', phaseTime = 0, inked = 0, spit = 0;
   const bar = document.getElementById('boss');
+  bar.querySelector('b').textContent = 'The Kraken';
   bar.classList.add('on');
   drawBar();
 

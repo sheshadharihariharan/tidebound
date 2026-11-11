@@ -2,7 +2,8 @@
 // Also the shipyard's upgrades and what each level does.
 
 const KEY = 'tidebound-save';
-const FRESH = { bank: 0, levels: { hull: 0, sails: 0, cannons: 0, purse: 0 }, voyages: 0, krakens: 0, seenHelp: false };
+// krakens / crabs: bosses beaten (the Kraken unlocks the Coral Reef).
+const FRESH = { bank: 0, levels: { hull: 0, sails: 0, cannons: 0, purse: 0 }, voyages: 0, krakens: 0, crabs: 0, seenHelp: false };
 
 export const save = (() => {
   try {

@@ -140,6 +140,82 @@ export function createShark(scene) {
   };
 }
 
+// Jellyfish: a see-through pink bell that drifts toward you. Sailing through one stings and slows you;
+// one cannonball pops it. They come in swarms.
+const JELLY = toon(0xff8fc8, { transparent: true, opacity: 0.85 }), FRILL = toon(0xffc2e2);
+const TORUS = new THREE.TorusGeometry(0.62, 0.12, 6, 16).rotateX(Math.PI / 2);
+export function createJelly(scene) {
+  const b = createBody(scene, { maxSpeed: 1.6, turn: 1.5, hp: 5 }, { back: -0.7, front: 0.7, r: 0.75, top: 1.6 });
+  const bell = mesh(DOME, JELLY, [0, 0, 0], [0.7, 0.75, 0.7]);
+  const frill = mesh(TORUS, FRILL, [0, 0.02, 0]);
+  const spots = [0, 2.1, 4.2].map((a) => mesh(BLOB, FRILL, [Math.cos(a) * 0.3, 0.55, Math.sin(a) * 0.3], [0.1, 0.06, 0.1]));
+  b.body.add(bell, frill, ...spots);
+  b.shadow.visible = false;
+  const phase = Math.random() * 6;
+  return {
+    ...b,
+    update(dt, t, want, throttle) {
+      b.move(dt, want, throttle);
+      b.shadow.visible = false;
+      const s = b.state, pulse = Math.sin(t * 4 + phase), gone = Math.max(0, s.sinking);
+      b.body.scale.set(1 - pulse * 0.08, 1 + pulse * 0.15, 1 - pulse * 0.08).multiplyScalar(Math.max(0.01, 1 - gone * 2));
+      b.body.position.y = 0.05 + pulse * 0.05;
+    },
+  };
+}
+
+// Pufferfish: swims at you, then puffs up into a spiky ball (a red ring shows how far the spikes reach)
+// and bursts them out. Shoot it while it's puffed up for double damage.
+const PUFF = toon(0xf2c14e), PUFF_SPOT = toon(0xc98a2c), PUFF_BELLY = toon(0xfff1c9);
+const PUFF_SPIKE = new THREE.ConeGeometry(0.1, 0.35, 5);
+export const PUFF_REACH = 3.2;
+export function createPuffer(scene) {
+  const b = createBody(scene, { maxSpeed: 3.8, turn: 2.6, grip: 2.5, hp: 12 }, { back: -0.8, front: 0.8, r: 0.8, top: 2.2 });
+  const fish = new THREE.Group();
+  fish.add(mesh(BLOB, PUFF, [0, 0, 0], [0.62, 0.55, 0.55]), mesh(BLOB, PUFF_BELLY, [0.05, -0.18, 0], [0.5, 0.35, 0.45]));
+  for (const [x, z] of [[-0.2, 0.3], [0.1, -0.35], [-0.3, -0.15]]) fish.add(mesh(BLOB, PUFF_SPOT, [x, 0.35, z], [0.12, 0.08, 0.12]));
+  fish.add(...[-0.25, 0.25].map((z) => mesh(BLOB, mat.eye, [0.5, 0.18, z], [0.08, 0.1, 0.08])));
+  const tail = mesh(FIN, PUFF, [-0.75, 0, 0], [0.5, 0.5, 0.15]);
+  tail.rotation.z = Math.PI / 2;
+  fish.add(tail);
+  // Spikes all over, hidden until it puffs up.
+  const spikes = new THREE.Group();
+  for (let i = 0; i < 14; i++) {
+    const v = new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.8, Math.random() - 0.5).normalize();
+    const spike = mesh(PUFF_SPIKE, PUFF_SPOT, [v.x * 0.6, v.y * 0.55, v.z * 0.6]);
+    spike.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), v);
+    spikes.add(spike);
+  }
+  fish.add(spikes);
+  b.body.add(fish);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 32).rotateX(-Math.PI / 2), flat(0, 0xff4a3a));
+  ring.scale.setScalar(PUFF_REACH);
+  ring.position.y = 0.06;
+  b.root.add(ring);
+  let size = 1;
+
+  return {
+    ...b,
+    puff: 0, // 0 = normal, 1 = fully puffed up (set by its behaviour)
+    update(dt, t, want, throttle) {
+      b.move(dt, want, throttle);
+      const s = b.state, sink = Math.max(0, s.sinking);
+      size += (1 + this.puff * 1.2 - size) * Math.min(1, dt * 8);
+      fish.scale.setScalar(size * (1 + (this.puff > 0.5 ? Math.sin(t * 40) * 0.03 : 0)));
+      spikes.visible = size > 1.4;
+      ring.visible = this.puff > 0 && s.sinking < 0;
+      ring.material.opacity = 0.35 + 0.25 * Math.sin(t * 16);
+      b.body.position.y = 0.2 + (size - 1) * 0.35 + Math.sin(t * 3) * 0.05 - sink * 0.6;
+      b.body.rotation.x = Math.min(Math.PI, sink * 2.5);
+      tail.rotation.y = Math.sin(t * 10) * 0.4;
+    },
+    remove() {
+      b.remove();
+      ring.material.dispose();
+    },
+  };
+}
+
 function createMineModel() {
   const g = new THREE.Group();
   g.add(mesh(BLOB, mat.mine, [0, 0, 0], [0.42, 0.42, 0.42]));

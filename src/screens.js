@@ -9,12 +9,17 @@ const ICONS = {
   battle: '<path d="M5 5l14 14M19 5L5 19M3.5 15.5l5 5M15.5 20.5l5-5"/>',
   treasure: '<rect x="4" y="10" width="16" height="10" rx="1.5"/><path d="M4 10a8 5 0 0 1 16 0M12 13v3"/>',
   port: '<circle cx="12" cy="5" r="2"/><path d="M12 7v13M7.5 11h9M5 15a7 6 0 0 0 14 0"/>',
-  final: '<path d="M6 16v-5a6 6 0 0 1 12 0v5l-2 1v3H8v-3z"/><circle cx="9.5" cy="12" r="1.6"/><circle cx="14.5" cy="12" r="1.6"/>',
+  kraken: '<path d="M6 16v-5a6 6 0 0 1 12 0v5l-2 1v3H8v-3z"/><circle cx="9.5" cy="12" r="1.6"/><circle cx="14.5" cy="12" r="1.6"/>',
+  crab: '<ellipse cx="12" cy="15" rx="6" ry="4"/><path d="M7 12C4 11 3 7 5 5l2 3M17 12c3-1 4-5 2-7l-2 3M10 11V9M14 11V9M6 18l-2 2M18 18l2 2"/>',
+  storm: '<path d="M7 15a4 4 0 0 1 0-8 5 5 0 0 1 9.5 1.5A3.5 3.5 0 0 1 17 15z"/><path d="M12 15l-2 4h3l-2 4"/>',
+  lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
 };
+export const icon = (name) => `<svg viewBox="0 0 24 24">${ICONS[name]}</svg>`;
 
 // ---------- the chart ----------
 
 // steps: the route. path: index picked at each step so far. onPick(stepIndex, optionIndex).
+// info: { bank, voyage (from VOYAGES) }.
 export function showChart(steps, path, info, onPick) {
   const W = 800, H = 330, gap = (W - 120) / STOPS;
   const at = (col, i, n) => [60 + col * gap, H / 2 + 8 + (i - (n - 1) / 2) * 92];
@@ -28,19 +33,21 @@ export function showChart(steps, path, info, onPick) {
   svg += node(at(0, 0, 1), 'home', 'done', 'Home');
   steps.forEach((options, s) => options.forEach((type, i) => {
     const state = s < next ? (path[s] === i ? 'done' : 'past') : s === next ? 'pick' : 'later';
-    svg += node(at(s + 1, i, options.length), type, state, STOP[type].name, s, i);
+    const final = type === 'final';
+    svg += node(at(s + 1, i, options.length), final ? info.voyage.boss : type, state, final ? info.voyage.final : STOP[type].name, s, i, final);
   }));
   $('chart').innerHTML = `
-    <h2>${next === 0 ? 'A new voyage!' : 'Choose your next stop'}</h2>
+    <h2>${info.voyage.name} · ${next === 0 ? 'A new voyage!' : 'Choose your next stop'}</h2>
     <svg viewBox="0 0 ${W} ${H}">${svg}</svg>
     <p>Stop ${Math.min(next + 1, STOPS)} of ${STOPS} · Home chest: <b>${info.bank}</b> gold</p>`;
   $('chart').querySelectorAll('.pick').forEach((g) => g.addEventListener('click', () => onPick(+g.dataset.s, +g.dataset.i)));
   $('chart').classList.add('on');
 }
 
-function node([x, y], type, state, label, s, i) {
-  const show = state === 'pick' || type === 'final' || type === 'home';
-  return `<g class="node ${state} ${type}" data-s="${s}" data-i="${i}" transform="translate(${x} ${y})">
+// type: which icon. final: the boss's stop (always labelled, tinted red).
+function node([x, y], type, state, label, s, i, final = false) {
+  const show = state === 'pick' || final || type === 'home';
+  return `<g class="node ${state} ${type}${final ? ' final' : ''}" data-s="${s}" data-i="${i}" transform="translate(${x} ${y})">
     <circle r="30" class="hit"/><circle r="26"/>
     <g transform="translate(-15 -15) scale(1.25)">${ICONS[type]}</g>
     ${show ? `<text y="50">${label}</text>` : ''}</g>`;
@@ -85,9 +92,9 @@ export const gearTile = (id, { price, ...extra } = {}) =>
 
 // ---------- the title screen ----------
 
-// info: { bank, voyages, krakens }. on: { sail, shipyard, help }.
+// info: { bank, voyages, krakens, crabs }. on: { sail, shipyard, help }.
 export function showTitle(info, on) {
-  const stats = info.voyages ? `Voyages: ${info.voyages} · Krakens beaten: ${info.krakens}` : 'A cosy voyage of cannons, coves and one very big squid';
+  const stats = info.voyages ? `Voyages: ${info.voyages} · Bosses beaten: ${info.krakens + info.crabs}` : 'A cosy voyage of cannons, coves and one very big squid';
   $('title').innerHTML = `
     <h1>Tidebound</h1>
     <p>${stats}</p>

@@ -2,20 +2,26 @@
 // A treasure cove: open every chest; sometimes pirates ambush you halfway through.
 import { sfx } from './audio.js';
 
+// Each boss: its arrival message, a hint, and the message when it's beaten.
+const BOSS_BANNER = {
+  kraken: ['The Kraken!', 'Shoot its tentacles, then its head', 'Kraken defeated!'],
+  crab: ['The Crab King!', 'Shoot off its claws, then its soft middle', 'Crab King defeated!'],
+};
+
 // show.banner(text, small): a message in the middle. show.end(won): the stop is over.
 export function createBattle(enemies, loot, show) {
   let waves, wave, queue, timer, state = 'over', cove;
 
   // waves: lists of enemy kinds. Or for a cove: waves = [] and cove = { chests, ambush (a wave, or null) }.
-  // Or for Skull Rock: waves = 'kraken'.
+  // Or for the last stop: waves = the boss's name ('kraken' or 'crab').
   function start(w, c = null) {
     waves = w;
     cove = c;
     wave = -1;
-    if (waves === 'kraken') {
+    if (typeof waves === 'string') {
       state = 'boss';
-      enemies.summonKraken();
-      show.banner('The Kraken!', 'Shoot its tentacles, then its head');
+      enemies.summonBoss(waves);
+      show.banner(...BOSS_BANNER[waves]);
     } else if (cove) {
       state = 'cove';
       timer = 0;
@@ -69,8 +75,8 @@ export function createBattle(enemies, loot, show) {
       } else if (left === 0) {
         win('Cove cleared!', 'Gathering the gold…');
       }
-    } else if (state === 'boss' && enemies.krakenBeaten()) {
-      win('Kraken defeated!', 'Gathering the gold…');
+    } else if (state === 'boss' && enemies.bossBeaten()) {
+      win(BOSS_BANNER[waves][2], 'Gathering the gold…');
     } else if (state === 'won' && timer <= 0) {
       state = 'over';
       show.end(true);

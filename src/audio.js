@@ -304,6 +304,28 @@ export const sfx = {
     tone(220, t, 0.15, { type: 'triangle', gain: 0.25, slideTo: 120 });
     noise(t, 0.1, { type: 'bandpass', freq: 1200, gain: 0.25 });
   }),
+  // Coral Reef: a jellyfish sting, a buzzy zap.
+  zap: () => play((t) => {
+    tone(880, t, 0.18, { type: 'square', gain: 0.06, slideTo: 300 });
+    noise(t, 0.15, { type: 'bandpass', freq: 3000, q: 4, gain: 0.15 });
+  }),
+  // A pufferfish swelling up: a rising, rubbery squeak.
+  inflate: () => play((t) => tone(200, t, 0.8, { type: 'triangle', gain: 0.14, slideTo: 700, attack: 0.1 })),
+  // Its spikes bursting out.
+  spikes: () => play((t) => {
+    noise(t, 0.2, { type: 'highpass', freq: 2500, gain: 0.35 });
+    tone(500, t, 0.15, { type: 'triangle', gain: 0.15, slideTo: 150 });
+  }),
+  // The Crab King's claw snapping shut.
+  snap: () => play((t) => {
+    noise(t, 0.05, { type: 'bandpass', freq: 2200, q: 3, gain: 0.5 });
+    tone(320, t, 0.12, { type: 'square', gain: 0.08, slideTo: 160 });
+  }),
+  // A cannonball bouncing off its shell.
+  clank: () => play((t) => {
+    tone(1200, t, 0.25, { type: 'triangle', gain: 0.12 });
+    tone(1750, t, 0.18, { type: 'triangle', gain: 0.06 });
+  }),
   // A new wave: a short bright call on the marimba.
   wave: () => play((t) => [62, 66, 69, 74].forEach((m, i) => mallet(m, t + i * 0.09, { gain: 0.16 }))),
   // Battle won: a cheerful climb that lands on a held chord.

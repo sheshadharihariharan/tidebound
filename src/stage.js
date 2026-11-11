@@ -61,5 +61,11 @@ export function createStage(container) {
     camera.lookAt(focus);
     surface.position.set(focus.x, 0, focus.z);
   };
-  return { scene, camera, look, render: () => outline.render(scene, camera), renderer };
+  // Each voyage's sea has its own colour.
+  const setSea = (color) => {
+    scene.background.set(color);
+    seaMat.color.set(color);
+    document.documentElement.style.setProperty('--sea', '#' + new THREE.Color(color).getHexString());
+  };
+  return { scene, camera, look, setSea, render: () => outline.render(scene, camera), renderer };
 }
